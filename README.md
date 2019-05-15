@@ -51,11 +51,35 @@
   давления в мм ртутного столба и температуры в градусы Цельсия, полученные данные выдаются
   в USART3, например :
 
-000.01:02:57 | BMP280: Press=763.45 mmHg, Temp=21.82 DegC; BH1750: Lux=21.66 lx
+000.00:00:01 | [gsmONOFF] GSM_KEY set to 0
 
-000.01:03:07 | BMP280: Press=763.46 mmHg, Temp=21.83 DegC; BH1750: Lux=20.83 lx
+000.00:00:02 | [gsmONOFF] GSM_KEY set to 1
 
-000.01:03:17 | BMP280: Press=763.47 mmHg, Temp=21.84 DegC; BH1750: Lux=20.83 lx
+NORMAL POWER DOWN
+
+000.00:00:01 | [gsmONOFF] GSM_KEY set to 0
+
+000.00:00:02 | [gsmONOFF] GSM_KEY set to 1
+
+RDY
+
++CFUN: 1
+
++CPIN: NOT INSERTED
+
+000.00:00:05 | $GNRMC,235945.869,V,,,,,0.00,0.00,050180,,,N*54
+
+        UTC=05.01.80 23:59:45.869 'Invaid data'
+
+        Latitude=0.000000^ (North)
+
+        Longitude=0.000000^ (East)
+
+        Speed=0.00 km/h
+
+        Dir=0.00^
+
+000.00:00:07 | BMP280: Press=763.47 mmHg, Temp=22.04 DegC; BH1750: Lux=20.83 lx
 
   Эти же данные (время работы, напряжение питания, атмосферное давление, температура воздуха и освещенность)
 отображаются на дисплей ssd1306.
