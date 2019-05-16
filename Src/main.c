@@ -36,7 +36,8 @@
 //const char *ver = "ver 1.2rc3";//11.05.2019 - add QUEUE for at command
 //const char *ver = "ver 1.2rc4";//12.05.2019 - make QUEUE functions universal (for all queues), add GSM status (On/Off - Pin PA2)
 //const char *ver = "ver 1.2rc5";//13.05.2019 - minor changes : recv. msg from gsm_command_uart (speed=9600 for uart4), REMOVE RTC
-const char *ver = "ver 1.3rc1";//15.05.2019 - minor changes : set speed=38400 for uart5 (GPS), add parser for AT+CGNSINF command
+//const char *ver = "ver 1.3rc1";//15.05.2019 - minor changes : set speed=38400 for uart5 (GPS), add parser for AT+CGNSINF command
+const char *ver = "ver 1.4rc1";//16.05.2019 - major changes : add send auto at_commands, add new timer with period 500 ms
 
 
 /*
@@ -84,6 +85,7 @@ osSemaphoreId_t binSemHandle;
 bool evt_clear = false;
 
 volatile static uint32_t secCounter = 0;
+volatile static uint64_t HalfSecCounter = 0;
 
 HAL_StatusTypeDef i2cError = HAL_OK;
 const uint32_t min_wait_ms = 150;
@@ -114,6 +116,7 @@ static s_msg_t q_gps;
 const char *nameValid[] = {"Invaid", "Valid"};
 const char *nameNS[] = {"North" , "South"};
 const char *nameEW[] = {"East" , "West"};
+static bool onGNS = false;
 
 volatile s_flags flags = {1,1,0};
 
@@ -126,14 +129,23 @@ char msgAT[MAX_UART_BUF] = {0};
 static s_msg_t q_at;
 static bool evt_gsm = false;
 static bool OnOffEn = false;
-/*
-const uint8_t cmdsMax = 3;
+static bool onGSM = false;
+static int8_t cmdsInd = -1;
+volatile bool cmdsDone = true;
+/**/
+const uint8_t cmdsMax = 9;
 const char *cmds[] = {
 	"AT\r\n",
+	"AT+CMEE=2\r\n",
+	"AT+GMR\r\n",
+	"AT+GSN\r\n",
+	"AT+CREG?\r\n",
+	"AT+CCLK?\r\n",
+	"AT+CSQ\r\n",
 	"AT+CGNSPWR=1\r\n",
 	"AT+CGNSINF\r\n"
 };
-*/
+/**/
 
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
@@ -311,7 +323,7 @@ int main(void)
   const osThreadAttr_t gpsTask_attributes = {
     .name = "gpsTask",
     .priority = (osPriority_t) osPriorityNormal2,
-    .stack_size = 1024 //1536
+    .stack_size = 1024
   };
   gpsTaskHandle = osThreadNew(StartGpsTask, NULL, &gpsTask_attributes);
 
@@ -421,7 +433,8 @@ static void MX_TIM2_Init(void)
 {
 
   /* USER CODE BEGIN TIM2_Init 0 */
-
+	secCounter     = 0; //1 sec counter (uint32_t)
+	HalfSecCounter = 0; // 0.5 sec counter (uint64_t)
   /* USER CODE END TIM2_Init 0 */
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
@@ -433,7 +446,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 20999;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 999;
+  htim2.Init.Period = 499;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -644,8 +657,10 @@ uint8_t a, b, c, i;
 void gsmONOFF()
 {
 	Report(true, "[%s] GSM_KEY set to 0\r\n", __func__);
+	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
+	HAL_Delay(100);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);//set 0
-	osDelay(1500);
+	HAL_Delay(1650);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
 	Report(true, "[%s] GSM_KEY set to 1\r\n", __func__);
 }
@@ -688,16 +703,14 @@ struct tm ts;
 //-----------------------------------------------------------------------------
 int sec_to_str_time(uint32_t sec, char *stx)
 {
-uint32_t s = sec;
+	uint32_t day = sec / (60 * 60 * 24);
+	sec %= (60 * 60 * 24);
+    uint32_t hour = sec / (60 * 60);
+    sec %= (60 * 60);
+    uint32_t min = sec / (60);
+    sec %= 60;
 
-	uint32_t day = s / (60 * 60 * 24);
-	s %= (60 * 60 * 24);
-    uint32_t hour = s / (60 * 60);
-    s %= (60 * 60);
-    uint32_t min = s / (60);
-    s %= 60;
-
-    return (sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, s));
+    return (sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, sec));
 }
 //-----------------------------------------------------------------------------
 uint32_t get_secCounter()
@@ -709,6 +722,16 @@ void inc_secCounter()
 {
 	secCounter++;
 }
+//-----------------------------------------------------------------------------
+uint64_t get_hsCounter()
+{
+	return HalfSecCounter;
+}
+//-----------------------------------------------------------------------------
+void inc_hsCounter()
+{
+	HalfSecCounter++;
+}
 //------------------------------------------------------------------------------------------
 uint32_t get_tmr(uint32_t sec)
 {
@@ -718,6 +741,16 @@ uint32_t get_tmr(uint32_t sec)
 bool check_tmr(uint32_t sec)
 {
 	return (get_secCounter() >= sec ? true : false);
+}
+//------------------------------------------------------------------------------------------
+uint64_t get_hstmr(uint64_t hs)
+{
+	return (get_hsCounter() + hs);
+}
+//------------------------------------------------------------------------------------------
+bool check_hstmr(uint64_t hs)
+{
+	return (get_hsCounter() >= hs ? true : false);
 }
 //------------------------------------------------------------------------------------------
 // set LED_ERROR when error on and send message to UART1 (in from != NULL)
@@ -1372,11 +1405,18 @@ void StartAtTask(void *argument)
 
 	AtParamInit();
 	gsmONOFF();
+	char *uki = NULL;
+	cmdsInd = -1;
+	uint8_t counter = 0;
+	const char *buff = NULL;
+	bool cmdsReady = false;
+	uint32_t wait_ack = 0;
+	uint64_t new_cmds = 0;
 
 	/**/
 	char toScr[SCREEN_SIZE];
 	size_t fmem = xPortGetFreeHeapSize();
-	int len = sprintf(toScr, "free: %u", fmem);
+	int len = sprintf(toScr, "%u %u|%u", fmem, onGSM, onGNS);
 	ssd1306_text_xy(toScr, ssd1306_calcx(len), 1);
 	/**/
 
@@ -1384,22 +1424,86 @@ void StartAtTask(void *argument)
 	while (1) {
 
 		if (getQ(msgAT, &q_at) >= 0) {
+			if (strstr(msgAT, "NORMAL POWER DOWN")) {
+				onGSM = false;
+				if (!wait_ack) wait_ack = get_tmr(3);
+			} else if (strlen(msgAT)) {
+				onGSM = true;
+				if (strstr(msgAT, "RDY")) counter++;
+				else if (strstr(msgAT, "+CFUN:")) counter++;
+				else if (strstr(msgAT, "+CPIN: NOT INSERTED")) counter = 5;
+				else if (strstr(msgAT, "+CPIN: READY")) counter++;
+				else if (strstr(msgAT, "Call Ready")) counter++;
+				else if (strstr(msgAT, "SMS Ready")) counter++;
+				else if (strstr(msgAT, "ERROR") || strstr(msgAT, "OK")) {
+					wait_ack = 0;
+					cmdsDone = true;
+					if (cmdsInd >= 0) {
+						cmdsInd++;
+						new_cmds = get_hstmr(1);//500 ms
+					}
+				} else if ((uki = strstr(msgAT, "+CGNSPWR: ")) != NULL) {
+					uki += 10;
+					if (*uki == '1') onGNS = true; else onGNS = false;
+				}
+
+			}
+			if (counter >= 5) {
+				counter = 0;
+				cmdsInd = 0;
+				cmdsDone = true;
+				new_cmds = get_hstmr(10);//5 sec
+			}
 			Report(false, msgAT);
 			/**/
-			if (fmem != xPortGetFreeHeapSize()) {
+			//if (fmem != xPortGetFreeHeapSize()) {
 				fmem = xPortGetFreeHeapSize();
-				len = sprintf(toScr, "free: %u", fmem);
+				len = sprintf(toScr, "%u %u|%u", fmem, onGSM, onGNS);
 				ssd1306_text_xy(toScr, ssd1306_calcx(len), 1);
-			}
+			//}
 			/**/
+
 		}
 
-		if (getQ(msgCMD, &q_cmd) >= 0) {//send at command to sim868
-			//Report(false, msgCMD);
-			HAL_UART_Transmit_DMA(&huart4, (uint8_t *)msgCMD, strlen(msgCMD));
+		if (cmdsInd >= 0) {
+			if (cmdsInd >= cmdsMax) {
+				cmdsInd = -1;
+			} else {
+				if (cmdsDone) {
+					if (check_hstmr(new_cmds)) {
+						cmdsReady = true;
+						buff = &cmds[cmdsInd][0];
+						Report(false, "%.*s", strlen(cmds[cmdsInd]), cmds[cmdsInd]);
+					}
+				}
+			}
+		}
+
+		if (cmdsDone) {
+			if (getQ(msgCMD, &q_cmd) >= 0) {//send at command to sim868
+				cmdsReady = true;
+				buff = msgCMD;
+				//Report(false, msgCMD);
+			}
+		}
+
+		if (cmdsReady && buff && cmdsDone) {
+			cmdsReady = false;
+			HAL_UART_Transmit_DMA(&huart4, (uint8_t *)buff, strlen(buff));
 			while (HAL_UART_GetState(&huart4) != HAL_UART_STATE_READY) {
 				if (HAL_UART_GetState(&huart4) == HAL_UART_STATE_BUSY_RX) break;
 				osDelay(1);
+			}
+			buff = NULL;
+			cmdsDone = false;
+			wait_ack = get_tmr(10);
+		}
+
+
+		if (wait_ack) {
+			if (check_tmr(wait_ack)) {
+				evt_gsm = true;
+				wait_ack = 0;
 			}
 		}
 
@@ -1407,10 +1511,9 @@ void StartAtTask(void *argument)
 			evt_gsm = false;
 			AtParamInit();
 			gsmONOFF();
-
 		}
 
-		osDelay(1);
+		osDelay(10);
 	}
 
   /* USER CODE END StartAtTask */
@@ -1431,6 +1534,15 @@ void StartGpsTask(void *argument)
 	s_gps_t one;
 	s_inf_t inf;
 
+	/*
+	AT+CGNSCMD=0,"$PMTK251,115200*1F"
+	AT+CGNSCMD=0,"$PMTK251,38400*27"
+	AT+CGNSCMD=0,"$PMTK251,19200*22"
+	AT+CGNSCMD=0,"$PMTK251,9600*17"
+	AT+CGNSCMD=0,"$PMTK251,0*28"
+	*/
+
+
   /* Infinite loop */
 
 	while (1) {
@@ -1441,14 +1553,14 @@ void StartGpsTask(void *argument)
 				if (!parse_gps(msgNMEA, &one)) {
 					Report(false,
 						"\tUTC=%02u.%02u.%02u %02u:%02u:%02u.%03u '%s data'\r\n\tLatitude=%.6f^ (%s)\r\n\tLongitude=%.6f^ (%s)\r\n\t"
-						"Speed=%.2f km/h\r\n\tDir=%.2f^\r\n",//\tMode=%c\r\n\tCRC=%02X\r\n",
+						"Speed=%.2f km/h\r\n\tDir=%.2f^\r\n\tMode=%c\r\n\tCRC=%02X\r\n",
 						one.day, one.mon, one.year,
 						one.hour, one.min, one.sec, one.ms,
 						nameValid[one.good],
 						one.latitude, nameNS[one.ns],
 						one.longitude, nameEW[one.ew],
-						one.speed, one.dir);
-						//one.mode, one.crc);
+						one.speed, one.dir,
+						one.mode, one.crc);
 				}
 				if (!parse_inf(msgNMEA, &inf)) {
 					Report(false,
@@ -1491,23 +1603,26 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   /* USER CODE BEGIN Callback 1 */
 
   if (htim->Instance == TIM2) {
-	  inc_secCounter();
-	  HAL_GPIO_TogglePin(GPIOD, LED_GREEN_Pin);
+	  if (get_hsCounter() & 1) {//seconda
+		  inc_secCounter();
+		  HAL_GPIO_TogglePin(GPIOD, LED_GREEN_Pin);
 
-	  if (!i2cError) {
-		  if (evt_clear) {
-			  evt_clear = false;
-			  ssd1306_clear_line(2);
+		  if (!i2cError) {
+			  if (evt_clear) {
+				  evt_clear = false;
+				  ssd1306_clear_line(2);
+			  }
+			  char scrBuf[32];
+			  ssd1306_text_xy(scrBuf, ssd1306_calcx(sec_to_string(get_secCounter(), scrBuf, false)), 2);
 		  }
-		  char scrBuf[32];
-		  ssd1306_text_xy(scrBuf, ssd1306_calcx(sec_to_string(get_secCounter(), scrBuf, false)), 2);
+		  if (OnOffEn) {
+			  if (!HAL_GPIO_ReadPin(GSM_STAT_GPIO_Port, GSM_STAT_Pin))
+				  HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//gsm is on
+			  else
+				  HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//gsm is off
+		  }
 	  }
-	  if (OnOffEn) {
-		  if (!HAL_GPIO_ReadPin(GSM_STAT_GPIO_Port, GSM_STAT_Pin))
-			  HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//gsm is on
-		  else
-			  HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//gsm is off
-	  }
+	  inc_hsCounter();
   }
 
   /* USER CODE END Callback 1 */
