@@ -52,34 +52,61 @@
   в USART3, например :
 
 000.00:00:01 | [gsmONOFF] GSM_KEY set to 0
-
 000.00:00:02 | [gsmONOFF] GSM_KEY set to 1
-
 NORMAL POWER DOWN
-
 000.00:00:01 | [gsmONOFF] GSM_KEY set to 0
-
 000.00:00:02 | [gsmONOFF] GSM_KEY set to 1
-
 RDY
-
 +CFUN: 1
-
 +CPIN: NOT INSERTED
-
-000.00:00:05 | $GNRMC,235945.869,V,,,,,0.00,0.00,050180,,,N*54
-
-        UTC=05.01.80 23:59:45.869 'Invaid data'
-
-        Latitude=0.000000^ (North)
-
-        Longitude=0.000000^ (East)
-
-        Speed=0.00 km/h
-
+AT
+OK
+AT+CMEE=2
+OK
+AT+GMR
+Revision:1418B03SIM868M32_BT
+OK
+AT+GSN
+868183030452648
+OK
+AT+CREG?
++CREG: 0,4
+OK
+AT+CCLK?
++CCLK: "19/05/16,21:04:54+02"
+OK
+AT+CSQ
++CSQ: 0,0
+OK
+AT+CGNSPWR=1
+OK
+AT+CGNSPWR?
++CGNSPWR: 1
+OK
+AT+CGNSINF
+000.00:05:14 | +CGNSINF: 0,,,,,,,,,,,,,,,,,,,,
+        UTC=00.00.0000 00:00:00.000 rs:0/0
+        Latitude=0.000000^
+        Longitude=0.000000^
+        Altitude=0m
+        Speed=0.00km/h
         Dir=0.00^
-
-000.00:00:07 | BMP280: Press=763.47 mmHg, Temp=22.04 DegC; BH1750: Lux=20.83 lx
+        Mode=0
+        HDOP=0.0 PDOP=0.0 VDOP=0.0
+        Sat:0/0/0
+        dBHz=0
+        HPA=0.0 VPA=0.0
++CGNSINF: 0,,,,,,,,,,,,,,,,,,,,
+OK
+000.00:05:17 | BMP280: Press=761.17 mmHg, Temp=22.56 DegC; BH1750: Lux=22.50 lx
+000.00:05:22 | $GNRMC,235957.868,V,,,,,0.00,0.00,050180,,,N*56
+        UTC=05.01.80 23:59:57.868 'Invaid data'
+        Latitude=0.000000^ (North)
+        Longitude=0.000000^ (East)
+        Speed=0.00 km/h
+        Dir=0.00^
+        Mode=N
+        CRC=56
 
   Эти же данные (время работы, напряжение питания, атмосферное давление, температура воздуха и освещенность)
 отображаются на дисплей ssd1306.

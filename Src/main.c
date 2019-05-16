@@ -36,8 +36,9 @@
 //const char *ver = "ver 1.2rc3";//11.05.2019 - add QUEUE for at command
 //const char *ver = "ver 1.2rc4";//12.05.2019 - make QUEUE functions universal (for all queues), add GSM status (On/Off - Pin PA2)
 //const char *ver = "ver 1.2rc5";//13.05.2019 - minor changes : recv. msg from gsm_command_uart (speed=9600 for uart4), REMOVE RTC
-//const char *ver = "ver 1.3rc1";//15.05.2019 - minor changes : set speed=38400 for uart5 (GPS), add parser for AT+CGNSINF command
-const char *ver = "ver 1.4rc1";//16.05.2019 - major changes : add send auto at_commands, add new timer with period 500 ms
+//const char *ver = "ver 1.3rc1";//15.05.2019 - minor changes : set speed=38400 (AT+CGNSCMD=0,"$PMTK251,38400*27") for uart5 (GPS), add parser for AT+CGNSINF command
+//const char *ver = "ver 1.4rc1";//16.05.2019 - major changes : add send auto at_commands, add new timer with period 500 ms
+const char *ver = "ver 1.4rc2";//16.05.2019 - minor changes : change TIM2 period from 500 ms to 250 ms
 
 
 /*
@@ -118,8 +119,6 @@ const char *nameNS[] = {"North" , "South"};
 const char *nameEW[] = {"East" , "West"};
 static bool onGNS = false;
 
-volatile s_flags flags = {1,1,0};
-
 static char AtRxBuf[MAX_UART_BUF];
 volatile uint8_t at_rx_uk;
 uint8_t aRxByte;
@@ -132,8 +131,11 @@ static bool OnOffEn = false;
 static bool onGSM = false;
 static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
+
+uint8_t *adrByte = NULL;
+
 /**/
-const uint8_t cmdsMax = 9;
+const uint8_t cmdsMax = 10;//11;
 const char *cmds[] = {
 	"AT\r\n",
 	"AT+CMEE=2\r\n",
@@ -142,13 +144,17 @@ const char *cmds[] = {
 	"AT+CREG?\r\n",
 	"AT+CCLK?\r\n",
 	"AT+CSQ\r\n",
+	//"AT+CGNSCMD=0,\"$PMTK251,38400*27\"\r\n",
 	"AT+CGNSPWR=1\r\n",
+	"AT+CGNSPWR?\r\n",
 	"AT+CGNSINF\r\n"
 };
 /**/
 
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
+
+volatile s_flags flags = {1, 1, 0};
 
 /* USER CODE END PV */
 
@@ -261,7 +267,6 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
-
   /* USER CODE END RTOS_MUTEX */
 
   /* Create the semaphores(s) */
@@ -442,11 +447,15 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE BEGIN TIM2_Init 1 */
 
+  // htim2.Init.Prescaler = 41999; - 500ms
+  // htim2.Init.Period = 124; - 500ms / 2 = 250 ms
+  // 4 interrupt for one seconda period
+
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 20999;
+  htim2.Init.Prescaler = 41999;//20999;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 499;
+  htim2.Init.Period = 124;//249;//499;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -1030,16 +1039,18 @@ void LogData()
 //  callback function when recv. data from all uart's
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
+	adrByte = NULL;
 	if (huart->Instance == UART4 ) {//at_commands
 		getAT();
-		HAL_UART_Receive_IT(huart, (uint8_t *)&aRxByte, 1);
+		adrByte = &aRxByte;
 	} else if (huart->Instance == UART5) {//gps_nmea_messages
 		getNMEA();
-		HAL_UART_Receive_IT(huart, (uint8_t *)&gRxByte, 1);
+		adrByte = &gRxByte;
 	} else if (huart->Instance == USART3 ) {//log
 		LogData();
-		HAL_UART_Receive_IT(huart, (uint8_t *)&lRxByte, 1);
+		adrByte = &lRxByte;
 	}
+	if (adrByte) HAL_UART_Receive_IT(huart, adrByte, 1);
 }
 //------------------------------------------------------------------------------------------
 void fConv(float in, conv_t *ic)
@@ -1276,6 +1287,7 @@ void StartDefTask(void *argument)
   	uint8_t show;
 
   /* Infinite loop */
+
   	while (1)   {
   		/**/
   		if (mailQueueHandle) {
@@ -1379,9 +1391,7 @@ void StartSensTask(void *argument)
 					if (reg_id == BME280_SENSOR) humi = (data_rdx[6] << 8) | data_rdx[7];
 					bmp280_CalcAll(&sens, reg_id, temp, pres, humi);
 					//
-					if (mailQueueHandle) {
-						osMessageQueuePut(mailQueueHandle, (void *)&sens, 0, 10);
-					}
+					if (mailQueueHandle) osMessageQueuePut(mailQueueHandle, (void *)&sens, 0, 10);
 					//
 				}
 			}
@@ -1405,7 +1415,7 @@ void StartAtTask(void *argument)
 
 	AtParamInit();
 	gsmONOFF();
-	char *uki = NULL;
+	char *uki = msgCMD;
 	cmdsInd = -1;
 	uint8_t counter = 0;
 	const char *buff = NULL;
@@ -1416,8 +1426,7 @@ void StartAtTask(void *argument)
 	/**/
 	char toScr[SCREEN_SIZE];
 	size_t fmem = xPortGetFreeHeapSize();
-	int len = sprintf(toScr, "%u %u|%u", fmem, onGSM, onGNS);
-	ssd1306_text_xy(toScr, ssd1306_calcx(len), 1);
+	ssd1306_text_xy(toScr, ssd1306_calcx(sprintf(toScr, "f:%u on:%u.%u", fmem, onGSM, onGNS)), 1);
 	/**/
 
 	/* Infinite loop */
@@ -1440,11 +1449,11 @@ void StartAtTask(void *argument)
 					cmdsDone = true;
 					if (cmdsInd >= 0) {
 						cmdsInd++;
-						new_cmds = get_hstmr(1);//500 ms
+						new_cmds = get_hstmr(1);//250 ms
 					}
 				} else if ((uki = strstr(msgAT, "+CGNSPWR: ")) != NULL) {
-					uki += 10;
-					if (*uki == '1') onGNS = true; else onGNS = false;
+					if (*(uki + 10) == '1') onGNS = true;
+									   else onGNS = false;
 				}
 
 			}
@@ -1452,14 +1461,13 @@ void StartAtTask(void *argument)
 				counter = 0;
 				cmdsInd = 0;
 				cmdsDone = true;
-				new_cmds = get_hstmr(10);//5 sec
+				new_cmds = get_hstmr(8);//2 sec
 			}
 			Report(false, msgAT);
 			/**/
 			//if (fmem != xPortGetFreeHeapSize()) {
 				fmem = xPortGetFreeHeapSize();
-				len = sprintf(toScr, "%u %u|%u", fmem, onGSM, onGNS);
-				ssd1306_text_xy(toScr, ssd1306_calcx(len), 1);
+				ssd1306_text_xy(toScr, ssd1306_calcx(sprintf(toScr, "f:%u on:%u.%u", fmem, onGSM, onGNS)), 1);
 			//}
 			/**/
 
@@ -1487,14 +1495,13 @@ void StartAtTask(void *argument)
 			}
 		}
 
-		if (cmdsReady && buff && cmdsDone) {
+		if (cmdsReady && cmdsDone) {
 			cmdsReady = false;
 			HAL_UART_Transmit_DMA(&huart4, (uint8_t *)buff, strlen(buff));
 			while (HAL_UART_GetState(&huart4) != HAL_UART_STATE_READY) {
 				if (HAL_UART_GetState(&huart4) == HAL_UART_STATE_BUSY_RX) break;
 				osDelay(1);
 			}
-			buff = NULL;
 			cmdsDone = false;
 			wait_ack = get_tmr(10);
 		}
@@ -1536,7 +1543,9 @@ void StartGpsTask(void *argument)
 
 	/*
 	AT+CGNSCMD=0,"$PMTK251,115200*1F"
+
 	AT+CGNSCMD=0,"$PMTK251,38400*27"
+
 	AT+CGNSCMD=0,"$PMTK251,19200*22"
 	AT+CGNSCMD=0,"$PMTK251,9600*17"
 	AT+CGNSCMD=0,"$PMTK251,0*28"
@@ -1562,8 +1571,9 @@ void StartGpsTask(void *argument)
 						one.speed, one.dir,
 						one.mode, one.crc);
 				}
-				if (!parse_inf(msgNMEA, &inf)) {
-					Report(false,
+			}
+			if (!parse_inf(msgNMEA, &inf)) {
+				Report(false,
 						"\tUTC=%02u.%02u.%04u %02u:%02u:%02u.%03u rs:%u/%u\r\n\tLatitude=%f^\r\n\tLongitude=%f^\r\n\tAltitude=%dm\r\n\tSpeed=%.2fkm/h\r\n\tDir=%.2f^\r\n\tMode=%u\r\n\t"
 						"HDOP=%.1f PDOP=%.1f VDOP=%.1f\r\n\tSat:%u/%u/%u\r\n\tdBHz=%u\r\n\tHPA=%.1f VPA=%.1f\r\n",
 						inf.utc.day, inf.utc.mon, inf.utc.year, inf.utc.hour, inf.utc.min, inf.utc.sec, inf.utc.ms,
@@ -1573,8 +1583,8 @@ void StartGpsTask(void *argument)
 						inf.HDOP, inf.PDOP, inf.VDOP,
 						inf.GPSsatV, inf.GNSSsatU, inf.GLONASSsatV,
 						inf.dBHz, inf.HPA, inf.VPA);
-				}
 			}
+
 		}
 
 		osDelay(50);
@@ -1602,8 +1612,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
   /* USER CODE BEGIN Callback 1 */
 
-  if (htim->Instance == TIM2) {
-	  if (get_hsCounter() & 1) {//seconda
+  if (htim->Instance == TIM2) {//interrupt every 250 ms
+	  if ((get_hsCounter() & 3) == 3) {//seconda
 		  inc_secCounter();
 		  HAL_GPIO_TogglePin(GPIOD, LED_GREEN_Pin);
 
@@ -1623,6 +1633,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		  }
 	  }
 	  inc_hsCounter();
+
   }
 
   /* USER CODE END Callback 1 */
