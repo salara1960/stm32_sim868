@@ -46,7 +46,7 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
-#define WITHOUT_RTC
+#undef WITH_RTC
 
 #define MAX_QMSG 16
 
@@ -94,21 +94,21 @@ typedef struct {
 //$GNRMC,001805.868,V,,,,,0.00,0.00,060180,,,N*56
 #pragma pack(push,1)
 typedef struct {
-	uint8_t hour;//hh
-	uint8_t min;//mm
-	uint8_t sec;//ss
-	uint16_t ms;//sss
-	bool good;//x = 'V' - invalid, 'A' - valid
-	float latitude;//llll.lll
-	bool ns;//a - ‘N’ = North; ‘S’ = South
+	uint8_t hour;	//hh
+	uint8_t min;	//mm
+	uint8_t sec;	//ss
+	uint16_t ms;	//sss
+	bool good;		//x = 'V' - invalid, 'A' - valid
+	float latitude;	//llll.lll
+	bool ns;		//a - ‘N’ = North; ‘S’ = South
 	float longitude;//yyyy.yyy
-	bool ew;//a - ‘E’ = East; ‘W’ = West
-	float speed;//x.x - 0.00
-	float dir;//u.u - 0.00
-	uint8_t day;//xx - 06
-	uint8_t mon;//xx - 01
-	uint8_t year;//xx - 80
-	char mode;//v = ‘N’ = Data not valid, ‘A’ = Autonomous mode, ‘D’ = Differential mode, ‘E’ = Estimated (dead reckoning) mode
+	bool ew;		//a - ‘E’ = East; ‘W’ = West
+	float speed;	//x.x - 0.00
+	float dir;		//u.u - 0.00
+	uint8_t day;	//xx - 06
+	uint8_t mon;	//xx - 01
+	uint8_t year;	//xx - 80
+	char mode;		//v = ‘N’ = Data not valid, ‘A’ = Autonomous mode, ‘D’ = Differential mode, ‘E’ = Estimated (dead reckoning) mode
 	uint8_t crc;
 } s_gps_t;
 

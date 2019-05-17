@@ -38,7 +38,8 @@
 //const char *ver = "ver 1.2rc5";//13.05.2019 - minor changes : recv. msg from gsm_command_uart (speed=9600 for uart4), REMOVE RTC
 //const char *ver = "ver 1.3rc1";//15.05.2019 - minor changes : set speed=38400 (AT+CGNSCMD=0,"$PMTK251,38400*27") for uart5 (GPS), add parser for AT+CGNSINF command
 //const char *ver = "ver 1.4rc1";//16.05.2019 - major changes : add send auto at_commands, add new timer with period 500 ms
-const char *ver = "ver 1.4rc2";//16.05.2019 - minor changes : change TIM2 period from 500 ms to 250 ms
+//const char *ver = "ver 1.4rc2";//16.05.2019 - minor changes : change TIM2 period from 500 ms to 250 ms
+const char *ver = "ver 1.4rc3";//17.05.2019 - minor changes++
 
 
 /*
@@ -83,8 +84,6 @@ osMessageQueueId_t mailQueueHandle;
 osSemaphoreId_t binSemHandle;
 /* USER CODE BEGIN PV */
 
-bool evt_clear = false;
-
 volatile static uint32_t secCounter = 0;
 volatile static uint64_t HalfSecCounter = 0;
 
@@ -97,7 +96,8 @@ I2C_HandleTypeDef *portSSD;
 I2C_HandleTypeDef *portBH;
 
 static const char *_extDate = "DATE:";
-#ifndef WITHOUT_RTC
+#ifdef WITH_RTC
+	bool evt_clear = false;
 	static bool setDate = false;
 	volatile uint32_t extDate = 0;
 #endif
@@ -129,32 +129,28 @@ static s_msg_t q_at;
 static bool evt_gsm = false;
 static bool OnOffEn = false;
 static bool onGSM = false;
+
 static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
-
-uint8_t *adrByte = NULL;
-
-/**/
+char msgCMD[MAX_UART_BUF] = {0};
+static s_msg_t q_cmd;
 const uint8_t cmdsMax = 10;//11;
 const char *cmds[] = {
 	"AT\r\n",
-	"AT+CMEE=2\r\n",
+	"AT+CMEE=0\r\n",
 	"AT+GMR\r\n",
 	"AT+GSN\r\n",
-	"AT+CREG?\r\n",
 	"AT+CCLK?\r\n",
-	"AT+CSQ\r\n",
 	//"AT+CGNSCMD=0,\"$PMTK251,38400*27\"\r\n",
 	"AT+CGNSPWR=1\r\n",
 	"AT+CGNSPWR?\r\n",
+	"AT+CSQ\r\n",
+	"AT+CREG?\r\n",
 	"AT+CGNSINF\r\n"
 };
-/**/
 
-char msgCMD[MAX_UART_BUF] = {0};
-static s_msg_t q_cmd;
-
-volatile s_flags flags = {1, 1, 0};
+uint8_t *adrByte = NULL;
+volatile s_flags flags = {0, 0, 0};
 
 /* USER CODE END PV */
 
@@ -438,8 +434,10 @@ static void MX_TIM2_Init(void)
 {
 
   /* USER CODE BEGIN TIM2_Init 0 */
+
 	secCounter     = 0; //1 sec counter (uint32_t)
 	HalfSecCounter = 0; // 0.5 sec counter (uint64_t)
+
   /* USER CODE END TIM2_Init 0 */
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
@@ -669,7 +667,7 @@ void gsmONOFF()
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
 	HAL_Delay(100);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);//set 0
-	HAL_Delay(1650);
+	HAL_Delay(1350);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
 	Report(true, "[%s] GSM_KEY set to 1\r\n", __func__);
 }
@@ -684,7 +682,7 @@ void ClearRxBuf()
 
 void set_Date(time_t epoch)
 {
-#ifndef WITHOUT_RTC
+#ifdef WITH_RTC
 
 RTC_TimeTypeDef sTime;
 RTC_DateTypeDef sDate;
@@ -795,7 +793,7 @@ int sec_to_string(uint32_t sec, char *stx, bool log)
 {
 int ret = 0;
 
-#ifdef WITHOUT_RTC
+#ifndef WITH_RTC
 	uint32_t day = sec / (60 * 60 * 24);
 	sec %= (60 * 60 * 24);
 	uint32_t hour = sec / (60 * 60);
@@ -981,7 +979,7 @@ void LogData()
 		bool priz = false;
 		char *uk = strstr(RxBuf, _extDate);//const char *_extDate = "DATE:";
 		if (uk) {
-#ifndef WITHOUT_RTC
+#ifdef WITH_RTC
 			uk += strlen(_extDate);
 			if (*uk != '?') {
 				if (strlen(uk) < 10) setDate = false;
@@ -1426,7 +1424,7 @@ void StartAtTask(void *argument)
 	/**/
 	char toScr[SCREEN_SIZE];
 	size_t fmem = xPortGetFreeHeapSize();
-	ssd1306_text_xy(toScr, ssd1306_calcx(sprintf(toScr, "f:%u on:%u.%u", fmem, onGSM, onGNS)), 1);
+	ssd1306_text_xy(toScr, ssd1306_calcx(sprintf(toScr, "f:%u on:%u.%u", fmem, onGSM, onGNS)), 2);
 	/**/
 
 	/* Infinite loop */
@@ -1461,13 +1459,13 @@ void StartAtTask(void *argument)
 				counter = 0;
 				cmdsInd = 0;
 				cmdsDone = true;
-				new_cmds = get_hstmr(8);//2 sec
+				new_cmds = get_hstmr(12);//3 sec
 			}
 			Report(false, msgAT);
 			/**/
 			//if (fmem != xPortGetFreeHeapSize()) {
 				fmem = xPortGetFreeHeapSize();
-				ssd1306_text_xy(toScr, ssd1306_calcx(sprintf(toScr, "f:%u on:%u.%u", fmem, onGSM, onGNS)), 1);
+				ssd1306_text_xy(toScr, ssd1306_calcx(sprintf(toScr, "f:%u on:%u.%u", fmem, onGSM, onGNS)), 2);
 			//}
 			/**/
 
@@ -1476,6 +1474,8 @@ void StartAtTask(void *argument)
 		if (cmdsInd >= 0) {
 			if (cmdsInd >= cmdsMax) {
 				cmdsInd = -1;
+				flags.gps_log_show = 1;
+				flags.i2c_log_show = 1;
 			} else {
 				if (cmdsDone) {
 					if (check_hstmr(new_cmds)) {
@@ -1503,7 +1503,7 @@ void StartAtTask(void *argument)
 				osDelay(1);
 			}
 			cmdsDone = false;
-			wait_ack = get_tmr(10);
+			wait_ack = get_tmr(10);//WAIT ACK 10 SEC
 		}
 
 
@@ -1517,10 +1517,11 @@ void StartAtTask(void *argument)
 		if (evt_gsm) {
 			evt_gsm = false;
 			AtParamInit();
+			flags.gps_log_show = flags.i2c_log_show = 0;
 			gsmONOFF();
 		}
 
-		osDelay(10);
+		osDelay(1);
 	}
 
   /* USER CODE END StartAtTask */
@@ -1540,6 +1541,8 @@ void StartGpsTask(void *argument)
 	GpsParamInit();
 	s_gps_t one;
 	s_inf_t inf;
+	bool ns = false;
+	bool ew = false;
 
 	/*
 	AT+CGNSCMD=0,"$PMTK251,115200*1F"
@@ -1573,12 +1576,14 @@ void StartGpsTask(void *argument)
 				}
 			}
 			if (!parse_inf(msgNMEA, &inf)) {
+				if (inf.latitude < 0) ns = true; else ns = false;
+				if (inf.longitude < 0) ew = true; else ew = false;
 				Report(false,
-						"\tUTC=%02u.%02u.%04u %02u:%02u:%02u.%03u rs:%u/%u\r\n\tLatitude=%f^\r\n\tLongitude=%f^\r\n\tAltitude=%dm\r\n\tSpeed=%.2fkm/h\r\n\tDir=%.2f^\r\n\tMode=%u\r\n\t"
+						"\tUTC=%02u.%02u.%04u %02u:%02u:%02u.%03u rs:%u/%u\r\n\tLatitude=%f^ (%s)\r\n\tLongitude=%f^ (%s)\r\n\tAltitude=%dm\r\n\tSpeed=%.2f km/h\r\n\tDir=%.2f^\r\n\tMode=%u\r\n\t"
 						"HDOP=%.1f PDOP=%.1f VDOP=%.1f\r\n\tSat:%u/%u/%u\r\n\tdBHz=%u\r\n\tHPA=%.1f VPA=%.1f\r\n",
 						inf.utc.day, inf.utc.mon, inf.utc.year, inf.utc.hour, inf.utc.min, inf.utc.sec, inf.utc.ms,
 						inf.run, inf.status,
-						inf.latitude, inf.longitude, inf.altitude,
+						inf.latitude, nameNS[ns], inf.longitude, nameEW[ew], inf.altitude,
 						inf.speed, inf.dir, inf.mode,
 						inf.HDOP, inf.PDOP, inf.VDOP,
 						inf.GPSsatV, inf.GNSSsatU, inf.GLONASSsatV,
@@ -1611,19 +1616,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
-
+  else
   if (htim->Instance == TIM2) {//interrupt every 250 ms
 	  if ((get_hsCounter() & 3) == 3) {//seconda
 		  inc_secCounter();
 		  HAL_GPIO_TogglePin(GPIOD, LED_GREEN_Pin);
 
 		  if (!i2cError) {
+#ifdef WITH_RTC
 			  if (evt_clear) {
 				  evt_clear = false;
-				  ssd1306_clear_line(2);
+				  ssd1306_clear_line(1);
 			  }
+#endif
 			  char scrBuf[32];
-			  ssd1306_text_xy(scrBuf, ssd1306_calcx(sec_to_string(get_secCounter(), scrBuf, false)), 2);
+			  ssd1306_text_xy(scrBuf, ssd1306_calcx(sec_to_string(get_secCounter(), scrBuf, false)), 1);
 		  }
 		  if (OnOffEn) {
 			  if (!HAL_GPIO_ReadPin(GSM_STAT_GPIO_Port, GSM_STAT_Pin))

@@ -14,9 +14,6 @@ HAL_StatusTypeDef rt = HAL_ERROR;
 		rt |= HAL_I2C_Master_Receive(portBMP, BMP280_ADDR << 1, data_rd, size, max_wait_ms);
 	}
 
-    i2cError = rt;
-    if (i2cError) errLedOn(__func__);
-
     return rt;
 }
 //-----------------------------------------------------------------------------
@@ -33,9 +30,6 @@ uint8_t dat[] = {BMP280_REG_RESET, BMP280_RESET_VALUE};
 			rt |= HAL_I2C_Master_Receive(portBMP, BMP280_ADDR << 1, chip_id, 1, min_wait_ms);
 		}
 	}
-
-    i2cError = rt;
-    if (i2cError) errLedOn(__func__);
 
     return rt;
 }
@@ -66,9 +60,6 @@ uint16_t len = sizeof(dat);
 			*conf = dat[2];
 		}
 	}
-
-    i2cError = rt;
-    if (i2cError) errLedOn(__func__);
 
     return rt;
 }
@@ -110,9 +101,6 @@ uint8_t data[24] = {0};
     }
 
 outm:
-
-	i2cError = err;
-	if (i2cError) errLedOn(__func__);
 
     return err;
 }

@@ -140,20 +140,7 @@ const uint8_t font8x8[128][8] = {
 const uint32_t _mswait = 10;
 
 //******************************************************************************************
-/*
-HAL_StatusTypeDef i2cSend(I2C_HandleTypeDef *hi2c, uint16_t devAdr, uint8_t *data, uint16_t len)
-{
-	return HAL_StatusTypeDef ret = HAL_I2C_Master_Transmit(hi2c, devAdr, data, len, min_wait_ms);
 
-//	while (1) {
-//		HAL_I2C_StateTypeDef rt = HAL_I2C_GetState(hi2c);
-//		if ((rt == HAL_I2C_STATE_TIMEOUT) || (rt == HAL_I2C_STATE_ERROR) || (rt == HAL_I2C_STATE_READY)) break;
-//		HAL_Delay(1);
-//	}
-//
-//	return HAL_OK;
-}
-*/
 //-----------------------------------------------------------------------------------------
 
 void ssd1306_on(bool flag)
