@@ -29,6 +29,7 @@
 "Src/bh1750.o"
 "Src/bmp280.o"
 "Src/freertos.o"
+"Src/jfes.o"
 "Src/main.o"
 "Src/ssd1306.o"
 "Src/stm32f4xx_hal_msp.o"

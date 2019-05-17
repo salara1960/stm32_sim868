@@ -39,7 +39,9 @@
 //const char *ver = "ver 1.3rc1";//15.05.2019 - minor changes : set speed=38400 (AT+CGNSCMD=0,"$PMTK251,38400*27") for uart5 (GPS), add parser for AT+CGNSINF command
 //const char *ver = "ver 1.4rc1";//16.05.2019 - major changes : add send auto at_commands, add new timer with period 500 ms
 //const char *ver = "ver 1.4rc2";//16.05.2019 - minor changes : change TIM2 period from 500 ms to 250 ms
-const char *ver = "ver 1.4rc3";//17.05.2019 - minor changes++
+//const char *ver = "ver 1.4rc3";//17.05.2019 - minor changes++
+const char *ver = "ver 1.5rc1";//17.05.2019 - major changes : add json library !!!
+
 
 
 /*
@@ -134,7 +136,7 @@ static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
-const uint8_t cmdsMax = 10;//11;
+const uint8_t cmdsMax = 10;
 const char *cmds[] = {
 	"AT\r\n",
 	"AT+CMEE=0\r\n",
@@ -142,6 +144,7 @@ const char *cmds[] = {
 	"AT+GSN\r\n",
 	"AT+CCLK?\r\n",
 	//"AT+CGNSCMD=0,\"$PMTK251,38400*27\"\r\n",
+	//AT+CGNSCMD=0,"$PMTK251,115200*1F"
 	"AT+CGNSPWR=1\r\n",
 	"AT+CGNSPWR?\r\n",
 	"AT+CSQ\r\n",
@@ -222,7 +225,7 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
-  #ifdef GSM_KEY_Pin
+#ifdef GSM_KEY_Pin
   HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//1
 #endif
 
@@ -290,6 +293,7 @@ int main(void)
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
 
+  	  HAL_Delay(1000);
   	  ClearRxBuf();
   	  HAL_UART_Receive_IT(&huart3, (uint8_t *)&lRxByte, 1);//LOG
 
@@ -316,7 +320,7 @@ int main(void)
   const osThreadAttr_t atTask_attributes = {
     .name = "atTask",
     .priority = (osPriority_t) osPriorityHigh,
-    .stack_size = 1024
+    .stack_size = 1536
   };
   atTaskHandle = osThreadNew(StartAtTask, NULL, &atTask_attributes);
 
@@ -530,7 +534,7 @@ static void MX_UART5_Init(void)
 
   /* USER CODE END UART5_Init 1 */
   huart5.Instance = UART5;
-  huart5.Init.BaudRate = 38400;
+  huart5.Init.BaudRate = 115200;//38400;
   huart5.Init.WordLength = UART_WORDLENGTH_8B;
   huart5.Init.StopBits = UART_STOPBITS_1;
   huart5.Init.Parity = UART_PARITY_NONE;
@@ -618,7 +622,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, LED_GREEN_Pin|LED_ORANGE_Pin|LED_RED_Pin|LED_BLUE_Pin, GPIO_PIN_RESET);
@@ -664,8 +668,8 @@ uint8_t a, b, c, i;
 void gsmONOFF()
 {
 	Report(true, "[%s] GSM_KEY set to 0\r\n", __func__);
-	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
-	HAL_Delay(100);
+	//HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
+	//HAL_Delay(100);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);//set 0
 	HAL_Delay(1350);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
@@ -842,7 +846,7 @@ void Report(bool addTime, const char *fmt, ...)
 HAL_StatusTypeDef er = HAL_OK;
 size_t len = 256;
 
-	char *buff = (char *)pvPortMalloc(len);
+	char *buff = (char *)pvPortMalloc(len);//char *buff = (char *)pvPortMalloc(len); //vPortFree(buff);
 	if (buff) {
 		buff[0] = 0;
 		int dl = 0, sz;
@@ -945,9 +949,9 @@ void getAT()
 		if (aRxByte >= 0x20) adone = 1;
 		if (adone) AtRxBuf[at_rx_uk++] = (char)aRxByte;
 	}
-	if (at_rx_uk > 1) {
-		if ((aRxByte == 0x0a) && adone) {
-			strcat(AtRxBuf, "\r\n");
+	if (at_rx_uk > 0) {
+		if ( ( (aRxByte == 0x0a) || (aRxByte == 0x3e) ) && adone) {
+			if (aRxByte != 0x3e) strcat(AtRxBuf, "\r\n");
 			int len = strlen(AtRxBuf);
 			char *buff = (char *)calloc(1, len + 1);
 			if (buff) {
@@ -962,7 +966,6 @@ void getAT()
 				}
 			}
 
-			//ssd1306_clear_line(4);
 			ssd1306_text_xy(AtRxBuf, ssd1306_calcx(sprintf(AtRxBuf, "MSG: %lu", ++atCounter)), 4);
 
 			at_rx_uk = adone = 0;
@@ -991,42 +994,38 @@ void LogData()
 			evt_clear = true;
 #endif
 		} else {
-			if (strstr(RxBuf, "AT")) {
-				strcat(RxBuf, "\n");
-				int len = strlen(RxBuf);
-				char *buff = (char *)calloc(1, len + 1);
-				if (buff) {
-					memcpy(buff, RxBuf, len);
-					if (putQ(buff, &q_cmd) < 0) free(buff);
-				}
-				//
-				priz = true;
+			if (strstr(RxBuf, "GSM:")) {
+				evt_gsm = true; priz = true;
 			} else {
-				if (strstr(RxBuf, "GSM:")) {
-					evt_gsm = true;
-					priz = true;
+				if (strstr(RxBuf, "GPS:")) {
+					flags.gps_log_show = ~flags.gps_log_show; priz = true;
 				} else {
-					if (strstr(RxBuf, "GPS:")) {
-						flags.gps_log_show = ~flags.gps_log_show;
-						priz = true;
+					if (strstr(RxBuf, "I2C:")) {
+						flags.i2c_log_show = ~flags.i2c_log_show; priz = true;
 					} else {
-						if (strstr(RxBuf, "I2C:")) {
-							flags.i2c_log_show = ~flags.i2c_log_show;
-							priz = true;
+						if (strstr(RxBuf, "RESTART:")) {
+							ssd1306_clear(); NVIC_SystemReset();
 						} else {
-							if (strstr(RxBuf, "RESTART:")) {
-								ssd1306_clear();
-								NVIC_SystemReset();
+							if (strstr(RxBuf, "AT")) {
+								strcat(RxBuf, "\n"); priz = true;
+							} else {
+								if ((uk = strchr(RxBuf, '\r')) != NULL) *uk = '\0';
+							}
+							int len = strlen(RxBuf);
+							char *buff = (char *)calloc(1, len + 1);
+							if (buff) {
+								memcpy(buff, RxBuf, len);
+								if (putQ(buff, &q_cmd) < 0) free(buff);
 							}
 						}
 					}
-
 				}
 			}
 
 			if (priz) {
 				ssd1306_clear_line(5);
 				char *uke = strchr(RxBuf, '\r'); if (uke) *uke = '\0';
+				if (strlen(RxBuf) > 16) RxBuf[16] = 0;
 				ssd1306_text_xy(RxBuf, ssd1306_calcx(strlen(RxBuf)), 5);
 			}
 		}
@@ -1073,6 +1072,7 @@ void AtParamInit()
 {
 	at_rx_uk = 0;
 	memset(AtRxBuf, 0, MAX_UART_BUF);
+	cmdsInd = -1;
 	initQ(&q_at);
 	initQ(&q_cmd);
 	HAL_UART_Receive_IT(&huart4, (uint8_t *)&aRxByte, 1);//AT
@@ -1336,6 +1336,7 @@ void StartDefTask(void *argument)
 void StartSensTask(void *argument)
 {
   /* USER CODE BEGIN StartSensTask */
+
 	uint8_t data_rdx[DATA_LENGTH] = {0};
 	uint8_t reg_id   = 0;
 	uint8_t reg_stat = 0;
@@ -1413,11 +1414,11 @@ void StartAtTask(void *argument)
 
 	AtParamInit();
 	gsmONOFF();
+
 	char *uki = msgCMD;
-	cmdsInd = -1;
-	uint8_t counter = 0;
 	const char *buff = NULL;
 	bool cmdsReady = false;
+	uint8_t counter = 0;
 	uint32_t wait_ack = 0;
 	uint64_t new_cmds = 0;
 
@@ -1442,7 +1443,11 @@ void StartAtTask(void *argument)
 				else if (strstr(msgAT, "+CPIN: READY")) counter++;
 				else if (strstr(msgAT, "Call Ready")) counter++;
 				else if (strstr(msgAT, "SMS Ready")) counter++;
-				else if (strstr(msgAT, "ERROR") || strstr(msgAT, "OK")) {
+				else if (strstr(msgAT, "ERROR") ||
+							strstr(msgAT, "OK") ||
+								strchr(msgAT, '>') ||
+									strstr(msgAT, "+BTSCAN: 1")) {// ||
+										//strstr(msgAT, "+CGNSINF:")) {
 					wait_ack = 0;
 					cmdsDone = true;
 					if (cmdsInd >= 0) {
@@ -1459,7 +1464,7 @@ void StartAtTask(void *argument)
 				counter = 0;
 				cmdsInd = 0;
 				cmdsDone = true;
-				new_cmds = get_hstmr(12);//3 sec
+				new_cmds = get_hstmr(8);//3 sec
 			}
 			Report(false, msgAT);
 			/**/
@@ -1503,7 +1508,10 @@ void StartAtTask(void *argument)
 				osDelay(1);
 			}
 			cmdsDone = false;
-			wait_ack = get_tmr(10);//WAIT ACK 10 SEC
+			if (strstr(buff, "AT+BTSPPSEND="))
+				wait_ack = get_tmr(30);//WAIT ACK 30 SEC
+			else
+				wait_ack = get_tmr(10);//WAIT ACK 10 SEC
 		}
 
 
@@ -1521,7 +1529,7 @@ void StartAtTask(void *argument)
 			gsmONOFF();
 		}
 
-		osDelay(1);
+		osDelay(2);
 	}
 
   /* USER CODE END StartAtTask */
@@ -1546,14 +1554,19 @@ void StartGpsTask(void *argument)
 
 	/*
 	AT+CGNSCMD=0,"$PMTK251,115200*1F"
-
 	AT+CGNSCMD=0,"$PMTK251,38400*27"
-
 	AT+CGNSCMD=0,"$PMTK251,19200*22"
 	AT+CGNSCMD=0,"$PMTK251,9600*17"
 	AT+CGNSCMD=0,"$PMTK251,0*28"
 	*/
+	//char *buff = (char *)pvPortMalloc(len); //vPortFree(buff);
+	jfes_config_t jconf = {
+		.jfes_malloc = (jfes_malloc_t)pvPortMalloc,//malloc
+		.jfes_free = vPortFree//free
+	};
 
+	jfes_value_t *obj;
+	jfes_size_t stx_size = MAX_UART_BUF - 3;
 
   /* Infinite loop */
 
@@ -1563,7 +1576,32 @@ void StartGpsTask(void *argument)
 			if (flags.gps_log_show) {
 				Report(true, msgNMEA);
 				if (!parse_gps(msgNMEA, &one)) {
-					Report(false,
+					obj = jfes_create_object_value(&jconf);
+					if (obj) {
+						sprintf(msgNMEA, "%02u.%02u.%02u %02u:%02u:%02u.%03u",
+								one.day, one.mon, one.year, one.hour, one.min, one.sec, one.ms);
+						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, msgNMEA, 0), "UTC", 0);
+						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, nameValid[one.good], 0), "Data", 0);
+						if (one.ns) one.latitude *= -1.0;
+						jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)one.latitude), "Latitude", 0);
+						if (one.ew) one.longitude *= -1.0;
+						jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)one.longitude), "Longitude", 0);
+						jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)one.speed), "Speed", 0);
+						jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)one.dir), "Dir", 0);
+						sprintf(msgNMEA, "%c", one.mode);
+						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, msgNMEA, 0), "Mode", 0);
+						sprintf(msgNMEA, "%02X", one.crc);
+						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, msgNMEA, 0), "CRC", 0);
+
+						memset(msgNMEA, 0, MAX_UART_BUF);
+						jfes_value_to_string(obj, msgNMEA, &stx_size, 1);
+						strcat(msgNMEA, "\r\n");
+
+						Report(false, msgNMEA);
+
+						jfes_free_value(&jconf, obj);
+					}/* else
+						Report(false,
 						"\tUTC=%02u.%02u.%02u %02u:%02u:%02u.%03u '%s data'\r\n\tLatitude=%.6f^ (%s)\r\n\tLongitude=%.6f^ (%s)\r\n\t"
 						"Speed=%.2f km/h\r\n\tDir=%.2f^\r\n\tMode=%c\r\n\tCRC=%02X\r\n",
 						one.day, one.mon, one.year,
@@ -1572,14 +1610,14 @@ void StartGpsTask(void *argument)
 						one.latitude, nameNS[one.ns],
 						one.longitude, nameEW[one.ew],
 						one.speed, one.dir,
-						one.mode, one.crc);
+						one.mode, one.crc);*/
 				}
 			}
 			if (!parse_inf(msgNMEA, &inf)) {
 				if (inf.latitude < 0) ns = true; else ns = false;
 				if (inf.longitude < 0) ew = true; else ew = false;
 				Report(false,
-						"\tUTC=%02u.%02u.%04u %02u:%02u:%02u.%03u rs:%u/%u\r\n\tLatitude=%f^ (%s)\r\n\tLongitude=%f^ (%s)\r\n\tAltitude=%dm\r\n\tSpeed=%.2f km/h\r\n\tDir=%.2f^\r\n\tMode=%u\r\n\t"
+						"\tUTC=%02u.%02u.%04u %02u:%02u:%02u.%03u rs:%u/%u\r\n\tLatitude=%f^ (%s)\r\n\tLongitude=%f^ (%s)\r\n\tAltitude=%d m\r\n\tSpeed=%.2f km/h\r\n\tDir=%.2f^\r\n\tMode=%u\r\n\t"
 						"HDOP=%.1f PDOP=%.1f VDOP=%.1f\r\n\tSat:%u/%u/%u\r\n\tdBHz=%u\r\n\tHPA=%.1f VPA=%.1f\r\n",
 						inf.utc.day, inf.utc.mon, inf.utc.year, inf.utc.hour, inf.utc.min, inf.utc.sec, inf.utc.ms,
 						inf.run, inf.status,

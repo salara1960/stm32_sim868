@@ -40,6 +40,7 @@ extern "C" {
 #include <time.h>
 #include <math.h>
 #include <stdarg.h>
+#include "jfes.h"
 
 /* USER CODE END Includes */
 
