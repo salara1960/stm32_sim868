@@ -40,7 +40,10 @@
 //const char *ver = "ver 1.4rc1";//16.05.2019 - major changes : add send auto at_commands, add new timer with period 500 ms
 //const char *ver = "ver 1.4rc2";//16.05.2019 - minor changes : change TIM2 period from 500 ms to 250 ms
 //const char *ver = "ver 1.4rc3";//17.05.2019 - minor changes++
-const char *ver = "ver 1.5rc1";//17.05.2019 - major changes : add json library !!!
+//const char *ver = "ver 1.5rc1";//17.05.2019 - major changes : add json library !!!
+const char *ver = "ver 1.6rc1";//18.05.2019 - minor changes : for USART3 set speed=500000
+															// in StartGpsTask make json report for +CGNSINF: ......
+															// set MAX_UART_BUF = 400 bytes
 
 
 
@@ -68,7 +71,8 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
-DMA_HandleTypeDef hdma_i2c1_tx;
+
+RTC_HandleTypeDef hrtc;
 
 TIM_HandleTypeDef htim2;
 
@@ -143,8 +147,6 @@ const char *cmds[] = {
 	"AT+GMR\r\n",
 	"AT+GSN\r\n",
 	"AT+CCLK?\r\n",
-	//"AT+CGNSCMD=0,\"$PMTK251,38400*27\"\r\n",
-	//AT+CGNSCMD=0,"$PMTK251,115200*1F"
 	"AT+CGNSPWR=1\r\n",
 	"AT+CGNSPWR?\r\n",
 	"AT+CSQ\r\n",
@@ -166,6 +168,7 @@ static void MX_TIM2_Init(void);
 static void MX_UART4_Init(void);
 static void MX_UART5_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_RTC_Init(void);
 void StartDefTask(void *argument); // for v2
 void StartSensTask(void *argument); // for v2
 void StartAtTask(void *argument); // for v2
@@ -223,6 +226,7 @@ int main(void)
   MX_UART4_Init();
   MX_UART5_Init();
   MX_USART3_UART_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
 
 #ifdef GSM_KEY_Pin
@@ -312,7 +316,7 @@ int main(void)
   const osThreadAttr_t sensTask_attributes = {
     .name = "sensTask",
     .priority = (osPriority_t) osPriorityNormal,
-    .stack_size = 512
+    .stack_size = 768
   };
   sensTaskHandle = osThreadNew(StartSensTask, NULL, &sensTask_attributes);
 
@@ -320,7 +324,7 @@ int main(void)
   const osThreadAttr_t atTask_attributes = {
     .name = "atTask",
     .priority = (osPriority_t) osPriorityHigh,
-    .stack_size = 1536
+    .stack_size = 1024
   };
   atTaskHandle = osThreadNew(StartAtTask, NULL, &atTask_attributes);
 
@@ -328,7 +332,7 @@ int main(void)
   const osThreadAttr_t gpsTask_attributes = {
     .name = "gpsTask",
     .priority = (osPriority_t) osPriorityNormal2,
-    .stack_size = 1024
+    .stack_size = 2048
   };
   gpsTaskHandle = osThreadNew(StartGpsTask, NULL, &gpsTask_attributes);
 
@@ -361,6 +365,7 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
 
   /** Configure the main internal regulator output voltage 
   */
@@ -390,6 +395,12 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+  PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_HSE_DIV25;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();
   }
@@ -430,6 +441,68 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief RTC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_RTC_Init(void)
+{
+
+  /* USER CODE BEGIN RTC_Init 0 */
+
+  /* USER CODE END RTC_Init 0 */
+
+  RTC_TimeTypeDef sTime = {0};
+  RTC_DateTypeDef sDate = {0};
+
+  /* USER CODE BEGIN RTC_Init 1 */
+  //            RTC_Clock = 8MHz / 25 = 320 KHz, RTC_Clock / (127+1) * (2499+1) = 1Hz = 1 sec !
+  /* USER CODE END RTC_Init 1 */
+  /** Initialize RTC Only 
+  */
+  hrtc.Instance = RTC;
+  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+  hrtc.Init.AsynchPrediv = 127;
+  hrtc.Init.SynchPrediv = 2499;
+  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
+  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
+  if (HAL_RTC_Init(&hrtc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* USER CODE BEGIN Check_RTC_BKUP */
+    
+  /* USER CODE END Check_RTC_BKUP */
+
+  /** Initialize RTC and set the Time and Date 
+  */
+  sTime.Hours = 0;
+  sTime.Minutes = 0;
+  sTime.Seconds = 0;
+  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sDate.WeekDay = RTC_WEEKDAY_MONDAY;
+  sDate.Month = RTC_MONTH_JANUARY;
+  sDate.Date = 1;
+  sDate.Year = 0;
+
+  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN RTC_Init 2 */
+
+  /* USER CODE END RTC_Init 2 */
+
+}
+
+/**
   * @brief TIM2 Initialization Function
   * @param None
   * @retval None
@@ -439,8 +512,8 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE BEGIN TIM2_Init 0 */
 
-	secCounter     = 0; //1 sec counter (uint32_t)
-	HalfSecCounter = 0; // 0.5 sec counter (uint64_t)
+	secCounter     = 0; // 1 sec counter (uint32_t)
+	HalfSecCounter = 0; // 250 ms counter (uint64_t)
 
   /* USER CODE END TIM2_Init 0 */
 
@@ -455,9 +528,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 41999;//20999;
+  htim2.Init.Prescaler = 41999;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 124;//249;//499;
+  htim2.Init.Period = 124;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -534,7 +607,7 @@ static void MX_UART5_Init(void)
 
   /* USER CODE END UART5_Init 1 */
   huart5.Instance = UART5;
-  huart5.Init.BaudRate = 115200;//38400;
+  huart5.Init.BaudRate = 115200;
   huart5.Init.WordLength = UART_WORDLENGTH_8B;
   huart5.Init.StopBits = UART_STOPBITS_1;
   huart5.Init.Parity = UART_PARITY_NONE;
@@ -567,7 +640,7 @@ static void MX_USART3_UART_Init(void)
 
   /* USER CODE END USART3_Init 1 */
   huart3.Instance = USART3;
-  huart3.Init.BaudRate = 115200;
+  huart3.Init.BaudRate = 500000;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
   huart3.Init.Parity = UART_PARITY_NONE;
@@ -599,9 +672,6 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 1, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
-  /* DMA1_Stream6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 4, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
 
 }
 
@@ -622,7 +692,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, LED_GREEN_Pin|LED_ORANGE_Pin|LED_RED_Pin|LED_BLUE_Pin, GPIO_PIN_RESET);
@@ -652,7 +722,6 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 //------------------------------------------------------------------------------------------
-
 uint8_t hextobin(char st, char ml)
 {
 const char hex[16] = {'0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'};
@@ -668,8 +737,6 @@ uint8_t a, b, c, i;
 void gsmONOFF()
 {
 	Report(true, "[%s] GSM_KEY set to 0\r\n", __func__);
-	//HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
-	//HAL_Delay(100);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);//set 0
 	HAL_Delay(1350);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
@@ -683,7 +750,6 @@ void ClearRxBuf()
     memset(RxBuf, 0, MAX_UART_BUF);
 }
 //-----------------------------------------------------------------------------
-
 void set_Date(time_t epoch)
 {
 #ifdef WITH_RTC
@@ -844,7 +910,7 @@ int ret = 0;
 void Report(bool addTime, const char *fmt, ...)
 {
 HAL_StatusTypeDef er = HAL_OK;
-size_t len = 256;
+size_t len = MAX_UART_BUF;
 
 	char *buff = (char *)pvPortMalloc(len);//char *buff = (char *)pvPortMalloc(len); //vPortFree(buff);
 	if (buff) {
@@ -852,7 +918,16 @@ size_t len = 256;
 		int dl = 0, sz;
 		va_list args;
 
-		if (addTime) dl = sec_to_string(get_secCounter(), buff, true);
+		if (addTime) {
+#ifdef WITH_RTC
+			uint32_t ep;
+			if (!setDate) ep = get_secCounter();
+					 else ep = extDate;
+#else
+			uint32_t ep = get_secCounter();
+#endif
+			dl = sec_to_string(ep, buff, true);
+		}
 		sz = dl;
 		va_start(args, fmt);
 		sz += vsnprintf(buff + dl, len - dl, fmt, args);
@@ -950,7 +1025,7 @@ void getAT()
 		if (adone) AtRxBuf[at_rx_uk++] = (char)aRxByte;
 	}
 	if (at_rx_uk > 0) {
-		if ( ( (aRxByte == 0x0a) || (aRxByte == 0x3e) ) && adone) {
+		if ( ( (aRxByte == 0x0a) || (aRxByte == 0x3e) ) && adone) {// '\n' || '>'
 			if (aRxByte != 0x3e) strcat(AtRxBuf, "\r\n");
 			int len = strlen(AtRxBuf);
 			char *buff = (char *)calloc(1, len + 1);
@@ -995,13 +1070,16 @@ void LogData()
 #endif
 		} else {
 			if (strstr(RxBuf, "GSM:")) {
-				evt_gsm = true; priz = true;
+				evt_gsm = true;
+				priz = true;
 			} else {
 				if (strstr(RxBuf, "GPS:")) {
-					flags.gps_log_show = ~flags.gps_log_show; priz = true;
+					flags.gps_log_show = ~flags.gps_log_show;
+					priz = true;
 				} else {
 					if (strstr(RxBuf, "I2C:")) {
-						flags.i2c_log_show = ~flags.i2c_log_show; priz = true;
+						flags.i2c_log_show = ~flags.i2c_log_show;
+						priz = true;
 					} else {
 						if (strstr(RxBuf, "RESTART:")) {
 							ssd1306_clear(); NVIC_SystemReset();
@@ -1549,8 +1627,8 @@ void StartGpsTask(void *argument)
 	GpsParamInit();
 	s_gps_t one;
 	s_inf_t inf;
-	bool ns = false;
-	bool ew = false;
+
+	int dl = 0;
 
 	/*
 	AT+CGNSCMD=0,"$PMTK251,115200*1F"
@@ -1559,14 +1637,19 @@ void StartGpsTask(void *argument)
 	AT+CGNSCMD=0,"$PMTK251,9600*17"
 	AT+CGNSCMD=0,"$PMTK251,0*28"
 	*/
-	//char *buff = (char *)pvPortMalloc(len); //vPortFree(buff);
-	jfes_config_t jconf = {
-		.jfes_malloc = (jfes_malloc_t)pvPortMalloc,//malloc
-		.jfes_free = vPortFree//free
-	};
 
-	jfes_value_t *obj;
+	jfes_config_t jconf = {
+		.jfes_malloc = (jfes_malloc_t)pvPortMalloc,
+		.jfes_free = vPortFree
+	};
+	jfes_config_t jconf2 = {
+		.jfes_malloc = (jfes_malloc_t)pvPortMalloc,
+		.jfes_free = vPortFree
+	};
+	jfes_value_t *obj  = NULL;
+	jfes_value_t *obj2 = NULL;
 	jfes_size_t stx_size = MAX_UART_BUF - 3;
+	jfes_size_t stx_size2 = stx_size;
 
   /* Infinite loop */
 
@@ -1578,9 +1661,9 @@ void StartGpsTask(void *argument)
 				if (!parse_gps(msgNMEA, &one)) {
 					obj = jfes_create_object_value(&jconf);
 					if (obj) {
-						sprintf(msgNMEA, "%02u.%02u.%02u %02u:%02u:%02u.%03u",
+						dl = sprintf(msgNMEA, "%02u.%02u.%02u %02u:%02u:%02u.%03u",
 								one.day, one.mon, one.year, one.hour, one.min, one.sec, one.ms);
-						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, msgNMEA, 0), "UTC", 0);
+						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, msgNMEA, dl), "UTC", 0);
 						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, nameValid[one.good], 0), "Data", 0);
 						if (one.ns) one.latitude *= -1.0;
 						jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)one.latitude), "Latitude", 0);
@@ -1588,19 +1671,19 @@ void StartGpsTask(void *argument)
 						jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)one.longitude), "Longitude", 0);
 						jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)one.speed), "Speed", 0);
 						jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)one.dir), "Dir", 0);
-						sprintf(msgNMEA, "%c", one.mode);
-						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, msgNMEA, 0), "Mode", 0);
-						sprintf(msgNMEA, "%02X", one.crc);
-						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, msgNMEA, 0), "CRC", 0);
+						dl = sprintf(msgNMEA, "%c", one.mode);
+						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, msgNMEA, dl), "Mode", 0);
+						dl = sprintf(msgNMEA, "%02X", one.crc);
+						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, msgNMEA, dl), "CRC", 0);
 
 						memset(msgNMEA, 0, MAX_UART_BUF);
 						jfes_value_to_string(obj, msgNMEA, &stx_size, 1);
 						strcat(msgNMEA, "\r\n");
+						jfes_free_value(&jconf, obj);
 
 						Report(false, msgNMEA);
 
-						jfes_free_value(&jconf, obj);
-					}/* else
+					}/* else {
 						Report(false,
 						"\tUTC=%02u.%02u.%02u %02u:%02u:%02u.%03u '%s data'\r\n\tLatitude=%.6f^ (%s)\r\n\tLongitude=%.6f^ (%s)\r\n\t"
 						"Speed=%.2f km/h\r\n\tDir=%.2f^\r\n\tMode=%c\r\n\tCRC=%02X\r\n",
@@ -1610,13 +1693,53 @@ void StartGpsTask(void *argument)
 						one.latitude, nameNS[one.ns],
 						one.longitude, nameEW[one.ew],
 						one.speed, one.dir,
-						one.mode, one.crc);*/
-				}
+						one.mode, one.crc);
+					}*/
+				}/**/
 			}
+
+			osDelay(50);
+
 			if (!parse_inf(msgNMEA, &inf)) {
-				if (inf.latitude < 0) ns = true; else ns = false;
-				if (inf.longitude < 0) ew = true; else ew = false;
-				Report(false,
+				obj2 = jfes_create_object_value(&jconf2);
+				if (obj2) {
+					dl = sprintf(msgNMEA, "%02u.%02u.%04u %02u:%02u:%02u.%03u",
+							inf.utc.day, inf.utc.mon, inf.utc.year, inf.utc.hour, inf.utc.min, inf.utc.sec, inf.utc.ms);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_string_value(&jconf2, msgNMEA, dl), "UTC", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, inf.run), "Run", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, inf.status), "Status", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.latitude), "Latitude", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.longitude), "Longitude", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, inf.altitude), "Altitude", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.speed), "Speed", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.dir), "Dir", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, inf.mode), "Mode", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.HDOP), "HDOP", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.PDOP), "PDOP", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.VDOP), "VDOP", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, inf.GPSsatV), "SatGPSV", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, inf.GNSSsatU), "SatGNSSU", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, inf.GLONASSsatV), "SatGLONASSV", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, inf.dBHz), "dBHz", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.HPA), "HPA", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.VPA), "VPA", 0);
+
+					memset(msgNMEA, 0, MAX_UART_BUF);
+					jfes_value_to_string(obj2, msgNMEA, &stx_size2, 1);
+					strcat(msgNMEA, "\r\n");
+
+					jfes_free_value(&jconf2, obj2);
+
+					//Report(false, "strlen(msgNMEA) = %u\r\n", strlen(msgNMEA));
+
+					Report(false, msgNMEA);
+
+				}/* else {
+					bool ns = false;
+					bool ew = false;
+					if (inf.latitude < 0) ns = true;
+					if (inf.longitude < 0) ew = true;
+					Report(false,
 						"\tUTC=%02u.%02u.%04u %02u:%02u:%02u.%03u rs:%u/%u\r\n\tLatitude=%f^ (%s)\r\n\tLongitude=%f^ (%s)\r\n\tAltitude=%d m\r\n\tSpeed=%.2f km/h\r\n\tDir=%.2f^\r\n\tMode=%u\r\n\t"
 						"HDOP=%.1f PDOP=%.1f VDOP=%.1f\r\n\tSat:%u/%u/%u\r\n\tdBHz=%u\r\n\tHPA=%.1f VPA=%.1f\r\n",
 						inf.utc.day, inf.utc.mon, inf.utc.year, inf.utc.hour, inf.utc.min, inf.utc.sec, inf.utc.ms,
@@ -1626,6 +1749,7 @@ void StartGpsTask(void *argument)
 						inf.HDOP, inf.PDOP, inf.VDOP,
 						inf.GPSsatV, inf.GNSSsatU, inf.GLONASSsatV,
 						inf.dBHz, inf.HPA, inf.VPA);
+				}*/
 			}
 
 		}

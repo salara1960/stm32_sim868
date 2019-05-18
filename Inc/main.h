@@ -184,7 +184,7 @@ I2C_HandleTypeDef *portBH;
 #define WHITE_COLOR   "\x1b[37m"
 */
 #define wait_sensor_def 10
-#define MAX_UART_BUF 256
+#define MAX_UART_BUF 400//384//256
 
 /* USER CODE END EM */
 
