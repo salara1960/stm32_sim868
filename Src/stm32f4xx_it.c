@@ -247,7 +247,7 @@ void I2C1_ER_IRQHandler(void)
   HAL_I2C_ER_IRQHandler(&hi2c1);
   /* USER CODE BEGIN I2C1_ER_IRQn 1 */
   i2cError = HAL_ERROR;
-  errLedOn(NULL);
+  Leds(true, LED_ERROR);
   /* USER CODE END I2C1_ER_IRQn 1 */
 }
 

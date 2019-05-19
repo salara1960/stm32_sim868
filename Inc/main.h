@@ -42,12 +42,11 @@ extern "C" {
 #include <stdarg.h>
 #include "jfes.h"
 
+//#include "stm32f4xx_hal_rtc.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
-
-#undef WITH_RTC
 
 #define MAX_QMSG 16
 

@@ -41,9 +41,10 @@
 //const char *ver = "ver 1.4rc2";//16.05.2019 - minor changes : change TIM2 period from 500 ms to 250 ms
 //const char *ver = "ver 1.4rc3";//17.05.2019 - minor changes++
 //const char *ver = "ver 1.5rc1";//17.05.2019 - major changes : add json library !!!
-const char *ver = "ver 1.6rc1";//18.05.2019 - minor changes : for USART3 set speed=500000
+//const char *ver = "ver 1.6rc1";//18.05.2019 - minor changes : for USART3 set speed=500000
 															// in StartGpsTask make json report for +CGNSINF: ......
 															// set MAX_UART_BUF = 400 bytes
+const char *ver = "ver 1.6rc2";//19.05.2019 - minor changes : add set DateTime (Unix epoch time), for example DATE:1558262631
 
 
 
@@ -71,8 +72,6 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
-
-RTC_HandleTypeDef hrtc;
 
 TIM_HandleTypeDef htim2;
 
@@ -102,11 +101,11 @@ I2C_HandleTypeDef *portSSD;
 I2C_HandleTypeDef *portBH;
 
 static const char *_extDate = "DATE:";
-#ifdef WITH_RTC
-	bool evt_clear = false;
-	static bool setDate = false;
-	volatile uint32_t extDate = 0;
-#endif
+bool evt_clear = false;
+static bool setDate = false;
+static bool epochSet = false;
+volatile static uint32_t extDate = 0;
+
 
 static char RxBuf[MAX_UART_BUF];
 volatile uint8_t rx_uk;
@@ -168,7 +167,6 @@ static void MX_TIM2_Init(void);
 static void MX_UART4_Init(void);
 static void MX_UART5_Init(void);
 static void MX_USART3_UART_Init(void);
-static void MX_RTC_Init(void);
 void StartDefTask(void *argument); // for v2
 void StartSensTask(void *argument); // for v2
 void StartAtTask(void *argument); // for v2
@@ -226,7 +224,6 @@ int main(void)
   MX_UART4_Init();
   MX_UART5_Init();
   MX_USART3_UART_Init();
-  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
 
 #ifdef GSM_KEY_Pin
@@ -365,7 +362,6 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
 
   /** Configure the main internal regulator output voltage 
   */
@@ -395,12 +391,6 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC;
-  PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_HSE_DIV25;
-  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();
   }
@@ -441,68 +431,6 @@ static void MX_I2C1_Init(void)
 }
 
 /**
-  * @brief RTC Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_RTC_Init(void)
-{
-
-  /* USER CODE BEGIN RTC_Init 0 */
-
-  /* USER CODE END RTC_Init 0 */
-
-  RTC_TimeTypeDef sTime = {0};
-  RTC_DateTypeDef sDate = {0};
-
-  /* USER CODE BEGIN RTC_Init 1 */
-  //            RTC_Clock = 8MHz / 25 = 320 KHz, RTC_Clock / (127+1) * (2499+1) = 1Hz = 1 sec !
-  /* USER CODE END RTC_Init 1 */
-  /** Initialize RTC Only 
-  */
-  hrtc.Instance = RTC;
-  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
-  hrtc.Init.AsynchPrediv = 127;
-  hrtc.Init.SynchPrediv = 2499;
-  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
-  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
-  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
-  if (HAL_RTC_Init(&hrtc) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /* USER CODE BEGIN Check_RTC_BKUP */
-    
-  /* USER CODE END Check_RTC_BKUP */
-
-  /** Initialize RTC and set the Time and Date 
-  */
-  sTime.Hours = 0;
-  sTime.Minutes = 0;
-  sTime.Seconds = 0;
-  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
-  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
-  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sDate.WeekDay = RTC_WEEKDAY_MONDAY;
-  sDate.Month = RTC_MONTH_JANUARY;
-  sDate.Date = 1;
-  sDate.Year = 0;
-
-  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN RTC_Init 2 */
-
-  /* USER CODE END RTC_Init 2 */
-
-}
-
-/**
   * @brief TIM2 Initialization Function
   * @param None
   * @retval None
@@ -514,6 +442,7 @@ static void MX_TIM2_Init(void)
 
 	secCounter     = 0; // 1 sec counter (uint32_t)
 	HalfSecCounter = 0; // 250 ms counter (uint64_t)
+	extDate        = 0; // 1 sec counter (uint32_t)
 
   /* USER CODE END TIM2_Init 0 */
 
@@ -750,34 +679,6 @@ void ClearRxBuf()
     memset(RxBuf, 0, MAX_UART_BUF);
 }
 //-----------------------------------------------------------------------------
-void set_Date(time_t epoch)
-{
-#ifdef WITH_RTC
-
-RTC_TimeTypeDef sTime;
-RTC_DateTypeDef sDate;
-struct tm ts;
-
-	gmtime_r(&epoch, &ts);
-
-	sDate.WeekDay = ts.tm_wday;
-	sDate.Month   = ts.tm_mon + 1;
-	sDate.Date    = ts.tm_mday;
-	sDate.Year    = ts.tm_year;
-	if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
-	else {
-		sTime.Hours   = ts.tm_hour;
-		sTime.Minutes = ts.tm_min;
-		sTime.Seconds = ts.tm_sec;
-		if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
-		else {
-			setDate = true;
-		}
-	}
-
-#endif
-}
-//-----------------------------------------------------------------------------
 int sec_to_str_time(uint32_t sec, char *stx)
 {
 	uint32_t day = sec / (60 * 60 * 24);
@@ -795,9 +696,24 @@ uint32_t get_secCounter()
 	return secCounter;
 }
 //-----------------------------------------------------------------------------
+uint32_t get_extDate()
+{
+	return extDate;
+}
+//-----------------------------------------------------------------------------
 void inc_secCounter()
 {
 	secCounter++;
+}
+//-----------------------------------------------------------------------------
+void inc_extDate()
+{
+	extDate++;
+}
+//-----------------------------------------------------------------------------
+void set_extDate(uint32_t ep)
+{
+	extDate = ep;
 }
 //-----------------------------------------------------------------------------
 uint64_t get_hsCounter()
@@ -849,13 +765,13 @@ void errLedOn(const char *from)
 void Leds(bool act, uint16_t Pin)
 {
 	if (act) {
-		HAL_GPIO_WritePin(GPIOD, Pin, GPIO_PIN_SET);//LED ON
+		HAL_GPIO_WritePin(GPIO_PortD, Pin, GPIO_PIN_SET);//LED ON
 		HAL_Delay(250);
-		HAL_GPIO_WritePin(GPIOD, Pin, GPIO_PIN_RESET);//LED OFF
+		HAL_GPIO_WritePin(GPIO_PortD, Pin, GPIO_PIN_RESET);//LED OFF
 		HAL_Delay(250);
-		HAL_GPIO_WritePin(GPIOD, Pin, GPIO_PIN_SET);//LED ON
+		HAL_GPIO_WritePin(GPIO_PortD, Pin, GPIO_PIN_SET);//LED ON
 	} else {
-		HAL_GPIO_WritePin(GPIOD, Pin, GPIO_PIN_RESET);//LED OFF
+		HAL_GPIO_WritePin(GPIO_PortD, Pin, GPIO_PIN_RESET);//LED OFF
 	}
 }
 //----------------------------------------------------------------------------------------
@@ -863,42 +779,38 @@ int sec_to_string(uint32_t sec, char *stx, bool log)
 {
 int ret = 0;
 
-#ifndef WITH_RTC
-	uint32_t day = sec / (60 * 60 * 24);
-	sec %= (60 * 60 * 24);
-	uint32_t hour = sec / (60 * 60);
-	sec %= (60 * 60);
-	uint32_t min = sec / (60);
-	sec %= 60;
-	ret = sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, sec);
-#else
 	if (!setDate) {//no valid date in RTC
-		uint32_t day = sec / (60 * 60 * 24);
-		sec %= (60 * 60 * 24);
-		uint32_t hour = sec / (60 * 60);
-		sec %= (60 * 60);
-		uint32_t min = sec / (60);
-		sec %= 60;
-		ret = sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, sec);
+		uint32_t s = sec;
+		uint32_t day = s / (60 * 60 * 24);
+		s %= (60 * 60 * 24);
+		uint32_t hour = s / (60 * 60);
+		s %= (60 * 60);
+		uint32_t min = s / (60);
+		s %= 60;
+		ret = sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, s);
 	} else {//in RTC valid date (epoch time)
-		RTC_TimeTypeDef sTime;
-		RTC_DateTypeDef sDate;
-		if (HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
-		else {
-			if (HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
-			else {
-				if (log)
-					ret = sprintf(stx, "%02u.%02u.%04u %02u:%02u:%02u",
-							sDate.Date, sDate.Month, (uint16_t)(sDate.Year+1900),
-							sTime.Hours, sTime.Minutes, sTime.Seconds);
-				else
-					ret = sprintf(stx, "%02u.%02u %02u:%02u:%02u",
-							sDate.Date, sDate.Month,
-							sTime.Hours, sTime.Minutes, sTime.Seconds);
-			}
+		struct tm ts;
+		time_t ep = (time_t)sec;
+		if (gmtime_r(&ep, &ts) != NULL) {
+			/*
+int tm_sec – секунды (отсчет с 0);
+int tm_min – минуты (отсчет с 0);
+int tm_hour - часы (отсчет с 0);
+int tm_mday - день месяца (отсчет с 1);
+int tm_mon - месяц (отсчет с 0);
+int tm_year – год (за начала отсчета принят 1900 год);
+int tm_wday - день недели (воскресенье - 0);
+int tm_yday - день в году (отсчет с 0);
+			 */
+			if (log)
+				ret = sprintf(stx, "%02d.%02d.%04d %02d:%02d:%02d",
+							ts.tm_mday, ts.tm_mon + 1, ts.tm_year + 1900, ts.tm_hour, ts.tm_min, ts.tm_sec);
+			else
+				ret = sprintf(stx, "%02d.%02d %02d:%02d:%02d",
+							ts.tm_mday, ts.tm_mon + 1, ts.tm_hour, ts.tm_min, ts.tm_sec);
 		}
 	}
-#endif
+
 	if (log) {
 		strcat(stx, " | ");
 		ret += 3;
@@ -912,22 +824,19 @@ void Report(bool addTime, const char *fmt, ...)
 HAL_StatusTypeDef er = HAL_OK;
 size_t len = MAX_UART_BUF;
 
-	char *buff = (char *)pvPortMalloc(len);//char *buff = (char *)pvPortMalloc(len); //vPortFree(buff);
+	char *buff = (char *)pvPortMalloc(len);
 	if (buff) {
 		buff[0] = 0;
 		int dl = 0, sz;
 		va_list args;
 
 		if (addTime) {
-#ifdef WITH_RTC
 			uint32_t ep;
 			if (!setDate) ep = get_secCounter();
 					 else ep = extDate;
-#else
-			uint32_t ep = get_secCounter();
-#endif
 			dl = sec_to_string(ep, buff, true);
 		}
+
 		sz = dl;
 		va_start(args, fmt);
 		sz += vsnprintf(buff + dl, len - dl, fmt, args);
@@ -946,7 +855,7 @@ size_t len = MAX_UART_BUF;
 		vPortFree(buff);
 	} else er = HAL_ERROR;
 
-	if (er != HAL_OK) Leds(true, LED_RED_Pin);
+	if (er != HAL_OK) Leds(true, LED_ERROR);
 }
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -1057,17 +966,15 @@ void LogData()
 		bool priz = false;
 		char *uk = strstr(RxBuf, _extDate);//const char *_extDate = "DATE:";
 		if (uk) {
-#ifdef WITH_RTC
 			uk += strlen(_extDate);
 			if (*uk != '?') {
 				if (strlen(uk) < 10) setDate = false;
 				else {
-					extDate = atoi(uk);
-					set_Date((time_t)extDate);
+					set_extDate((uint32_t)atoi(uk));
+					epochSet = setDate = true;
 				}
 			} else setDate = true;
 			evt_clear = true;
-#endif
 		} else {
 			if (strstr(RxBuf, "GSM:")) {
 				evt_gsm = true;
@@ -1682,20 +1589,8 @@ void StartGpsTask(void *argument)
 						jfes_free_value(&jconf, obj);
 
 						Report(false, msgNMEA);
-
-					}/* else {
-						Report(false,
-						"\tUTC=%02u.%02u.%02u %02u:%02u:%02u.%03u '%s data'\r\n\tLatitude=%.6f^ (%s)\r\n\tLongitude=%.6f^ (%s)\r\n\t"
-						"Speed=%.2f km/h\r\n\tDir=%.2f^\r\n\tMode=%c\r\n\tCRC=%02X\r\n",
-						one.day, one.mon, one.year,
-						one.hour, one.min, one.sec, one.ms,
-						nameValid[one.good],
-						one.latitude, nameNS[one.ns],
-						one.longitude, nameEW[one.ew],
-						one.speed, one.dir,
-						one.mode, one.crc);
-					}*/
-				}/**/
+					}
+				}
 			}
 
 			osDelay(50);
@@ -1733,23 +1628,7 @@ void StartGpsTask(void *argument)
 					//Report(false, "strlen(msgNMEA) = %u\r\n", strlen(msgNMEA));
 
 					Report(false, msgNMEA);
-
-				}/* else {
-					bool ns = false;
-					bool ew = false;
-					if (inf.latitude < 0) ns = true;
-					if (inf.longitude < 0) ew = true;
-					Report(false,
-						"\tUTC=%02u.%02u.%04u %02u:%02u:%02u.%03u rs:%u/%u\r\n\tLatitude=%f^ (%s)\r\n\tLongitude=%f^ (%s)\r\n\tAltitude=%d m\r\n\tSpeed=%.2f km/h\r\n\tDir=%.2f^\r\n\tMode=%u\r\n\t"
-						"HDOP=%.1f PDOP=%.1f VDOP=%.1f\r\n\tSat:%u/%u/%u\r\n\tdBHz=%u\r\n\tHPA=%.1f VPA=%.1f\r\n",
-						inf.utc.day, inf.utc.mon, inf.utc.year, inf.utc.hour, inf.utc.min, inf.utc.sec, inf.utc.ms,
-						inf.run, inf.status,
-						inf.latitude, nameNS[ns], inf.longitude, nameEW[ew], inf.altitude,
-						inf.speed, inf.dir, inf.mode,
-						inf.HDOP, inf.PDOP, inf.VDOP,
-						inf.GPSsatV, inf.GNSSsatU, inf.GLONASSsatV,
-						inf.dBHz, inf.HPA, inf.VPA);
-				}*/
+				}
 			}
 
 		}
@@ -1783,17 +1662,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	  if ((get_hsCounter() & 3) == 3) {//seconda
 		  inc_secCounter();
 		  HAL_GPIO_TogglePin(GPIOD, LED_GREEN_Pin);
-
-		  if (!i2cError) {
-#ifdef WITH_RTC
-			  if (evt_clear) {
-				  evt_clear = false;
-				  ssd1306_clear_line(1);
-			  }
-#endif
-			  char scrBuf[32];
-			  ssd1306_text_xy(scrBuf, ssd1306_calcx(sec_to_string(get_secCounter(), scrBuf, false)), 1);
+		  if (evt_clear) {
+			  evt_clear = false;
+			  if (!i2cError) ssd1306_clear_line(1);
 		  }
+		  if (epochSet) inc_extDate();
+		  uint32_t ep;
+		  if (setDate)  ep = get_extDate();
+		   	  	   else ep = get_secCounter();
+		  char scrBuf[32];
+		  if (!i2cError) ssd1306_text_xy(scrBuf, ssd1306_calcx(sec_to_string(ep, scrBuf, false)), 1);
 		  if (OnOffEn) {
 			  if (!HAL_GPIO_ReadPin(GSM_STAT_GPIO_Port, GSM_STAT_Pin))
 				  HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//gsm is on
