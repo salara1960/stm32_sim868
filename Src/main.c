@@ -21,12 +21,14 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "fatfs.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "ssd1306.h"
 #include "bmp280.h"
 #include "bh1750.h"
+#include "sd.h"
 
 //const char *ver = "ver 1.0rc1";//04.05.2019 - first working release
 //const char *ver = "ver 1.1rc1";//05.05.2019 - add virtual com port (usb device CDC)
@@ -44,7 +46,9 @@
 //const char *ver = "ver 1.6rc1";//18.05.2019 - minor changes : for USART3 set speed=500000
 															// in StartGpsTask make json report for +CGNSINF: ......
 															// set MAX_UART_BUF = 400 bytes
-const char *ver = "ver 1.6rc2";//19.05.2019 - minor changes : add set DateTime (Unix epoch time), for example DATE:1558262631
+//const char *ver = "ver 1.6rc2";//19.05.2019 - minor changes : add set DateTime (Unix epoch time), for example DATE:1558262631
+//const char *ver = "ver 1.6rc3";//19.05.2019 - minor changes : usart2 instead of uart4 (GPS port)
+const char *ver = "ver 1.7rc1";//20.05.2019 - major changes : add SD Card (SPI1) !!! (first step : list of root file system)
 
 
 
@@ -73,10 +77,12 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+SPI_HandleTypeDef hspi1;
+
 TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart4;
-UART_HandleTypeDef huart5;
+UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_uart4_tx;
 DMA_HandleTypeDef hdma_usart3_tx;
@@ -99,6 +105,10 @@ const uint32_t max_wait_ms = 1000;
 I2C_HandleTypeDef *portBMP;
 I2C_HandleTypeDef *portSSD;
 I2C_HandleTypeDef *portBH;
+UART_HandleTypeDef *portAT;//huart4;
+UART_HandleTypeDef *portGPS;//huart2;
+UART_HandleTypeDef *portLOG;//huart3;
+SPI_HandleTypeDef *portSPI;//hspi1;
 
 static const char *_extDate = "DATE:";
 bool evt_clear = false;
@@ -165,8 +175,9 @@ static void MX_DMA_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_UART4_Init(void);
-static void MX_UART5_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_USART2_UART_Init(void);
+static void MX_SPI1_Init(void);
 void StartDefTask(void *argument); // for v2
 void StartSensTask(void *argument); // for v2
 void StartAtTask(void *argument); // for v2
@@ -222,8 +233,9 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM2_Init();
   MX_UART4_Init();
-  MX_UART5_Init();
   MX_USART3_UART_Init();
+  MX_USART2_UART_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
 
 #ifdef GSM_KEY_Pin
@@ -235,7 +247,10 @@ int main(void)
   portBMP = &hi2c1;
   portSSD = &hi2c1;
   portBH  = &hi2c1;
-
+  portAT  = &huart4;//AT
+  portGPS = &huart2;//GPS
+  portLOG = &huart3;//LOG
+  portSPI = &hspi1;//SPI
 
 #ifdef GSM_KEY_Pin
   HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);
@@ -296,7 +311,7 @@ int main(void)
 
   	  HAL_Delay(1000);
   	  ClearRxBuf();
-  	  HAL_UART_Receive_IT(&huart3, (uint8_t *)&lRxByte, 1);//LOG
+  	  HAL_UART_Receive_IT(portLOG, (uint8_t *)&lRxByte, 1);//LOG
 
   /* USER CODE END RTOS_QUEUES */
 
@@ -305,7 +320,7 @@ int main(void)
   const osThreadAttr_t defTask_attributes = {
     .name = "defTask",
     .priority = (osPriority_t) osPriorityAboveNormal,
-    .stack_size = 1024
+    .stack_size = 2048
   };
   defTaskHandle = osThreadNew(StartDefTask, NULL, &defTask_attributes);
 
@@ -431,6 +446,44 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+	SS_SD_DESELECT();
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;//_4;//_8;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
   * @brief TIM2 Initialization Function
   * @param None
   * @retval None
@@ -521,35 +574,37 @@ static void MX_UART4_Init(void)
 }
 
 /**
-  * @brief UART5 Initialization Function
+  * @brief USART2 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_UART5_Init(void)
+static void MX_USART2_UART_Init(void)
 {
 
-  /* USER CODE BEGIN UART5_Init 0 */
+  /* USER CODE BEGIN USART2_Init 0 */
+	//
+	//		GPS port
+	//
+  /* USER CODE END USART2_Init 0 */
 
-  /* USER CODE END UART5_Init 0 */
+  /* USER CODE BEGIN USART2_Init 1 */
 
-  /* USER CODE BEGIN UART5_Init 1 */
-
-  /* USER CODE END UART5_Init 1 */
-  huart5.Instance = UART5;
-  huart5.Init.BaudRate = 115200;
-  huart5.Init.WordLength = UART_WORDLENGTH_8B;
-  huart5.Init.StopBits = UART_STOPBITS_1;
-  huart5.Init.Parity = UART_PARITY_NONE;
-  huart5.Init.Mode = UART_MODE_TX_RX;
-  huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart5.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart5) != HAL_OK)
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN UART5_Init 2 */
+  /* USER CODE BEGIN USART2_Init 2 */
 
-  /* USER CODE END UART5_Init 2 */
+  /* USER CODE END USART2_Init 2 */
 
 }
 
@@ -618,13 +673,15 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, LED_GREEN_Pin|LED_ORANGE_Pin|LED_RED_Pin|LED_BLUE_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : GSM_STAT_Pin */
   GPIO_InitStruct.Pin = GSM_STAT_Pin;
@@ -645,6 +702,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : SD_CS_Pin */
+  GPIO_InitStruct.Pin = SD_CS_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(SD_CS_GPIO_Port, &GPIO_InitStruct);
 
 }
 
@@ -1022,13 +1086,13 @@ void LogData()
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	adrByte = NULL;
-	if (huart->Instance == UART4 ) {//at_commands
+	if (huart->Instance == UART4) {// portAT - at_commands
 		getAT();
 		adrByte = &aRxByte;
-	} else if (huart->Instance == UART5) {//gps_nmea_messages
+	} else if (huart->Instance == USART2) {// portGPS - gps_nmea_messages
 		getNMEA();
 		adrByte = &gRxByte;
-	} else if (huart->Instance == USART3 ) {//log
+	} else if (huart->Instance == USART3 ) {// portLOG - log
 		LogData();
 		adrByte = &lRxByte;
 	}
@@ -1060,7 +1124,7 @@ void AtParamInit()
 	cmdsInd = -1;
 	initQ(&q_at);
 	initQ(&q_cmd);
-	HAL_UART_Receive_IT(&huart4, (uint8_t *)&aRxByte, 1);//AT
+	HAL_UART_Receive_IT(portAT, (uint8_t *)&aRxByte, 1);//AT
 	OnOffEn = true;
 }
 //------------------------------------------------------------------------------------------
@@ -1069,7 +1133,7 @@ void GpsParamInit()
 	gps_rx_uk = 0;
 	memset(GpsRxBuf, 0, MAX_UART_BUF);
 	initQ(&q_gps);
-	HAL_UART_Receive_IT(&huart5, (uint8_t *)&gRxByte, 1);//GPS
+	HAL_UART_Receive_IT(portGPS, (uint8_t *)&gRxByte, 1);//GPS
 }
 //------------------------------------------------------------------------------------------
 int8_t parse_gps(char *in, s_gps_t *data)
@@ -1246,6 +1310,23 @@ int8_t parse_inf(char *in, s_inf_t *inf)
 	}
 	return 0;
 }
+//------------------------------------------------------------------------------------------
+static char *fatAttr(uint8_t attr)
+{
+	switch (attr) {
+		case AM_RDO://0x01	/* Read only */
+			return "ReadOnly";
+		case AM_HID://	0x02	/* Hidden */
+			return "Hidden";
+		case AM_SYS://	0x04	/* System */
+			return "System";
+		case AM_DIR://	0x10	/* Directory */
+			return "Directory";
+		case AM_ARC://	0x20	/* Archive */
+			return "Archive";
+	}
+	return "Unknown";
+}
 
 //------------------------------------------------------------------------------------------
 
@@ -1260,8 +1341,18 @@ int8_t parse_inf(char *in, s_inf_t *inf)
 /* USER CODE END Header_StartDefTask */
 void StartDefTask(void *argument)
 {
+  /* init code for FATFS */
+  MX_FATFS_Init();
 
   /* USER CODE BEGIN 5 */
+
+  	  osDelay(1000);
+  	  //for FatFS
+  	  FRESULT mnt = FR_DISK_ERR;
+  	  FATFS dsk;
+  	  mnt = f_mount(&dsk, "SD1", 1);
+  	  if (mnt != FR_OK) Report(true, "Disk 'SD1' mount Error - %d\r\n", mnt);
+  	  	  	  	   else Report(true, "Disk 'SD1' mount OK !\r\n");
 
   	uint8_t row;
   	char toScreen[SCREEN_SIZE];
@@ -1270,6 +1361,8 @@ void StartDefTask(void *argument)
   	uint8_t show;
 
   /* Infinite loop */
+
+  	uint32_t fs_tmr = get_tmr(8);
 
   	while (1)   {
   		/**/
@@ -1307,6 +1400,34 @@ void StartDefTask(void *argument)
   		}
 		/**/
   		osDelay(100);
+  		/**/
+  		if (check_tmr(fs_tmr)) {
+  			fs_tmr = get_tmr(30);
+  			if (mnt == FR_OK) {
+  				DIR dir;
+  				FILINFO fileInfo;
+  				int nFiles = 0;
+  				FRESULT res = f_opendir(&dir, "/");
+  				if (res == FR_OK) {
+  					while (((res = f_readdir(&dir, &fileInfo)) == FR_OK) && (fileInfo.fname[0] != 0)) {
+  						nFiles++;
+  						fat_date_t *fdate = (fat_date_t *)&fileInfo.fdate;
+  						fat_time_t *ftime = (fat_time_t *)&fileInfo.ftime;
+  						Report(true, "\t%d: %lu\t%s\t%02u.%02u.%04u %02u:%02u:%02u\t'%.*s'\r\n",
+  								nFiles,
+								fileInfo.fsize,
+								fatAttr(fileInfo.fattrib),
+								fdate->day, fdate->mon, fdate->year + 1980,	//fileInfo.fdate,
+								ftime->hour, ftime->min, ftime->sec,  		//fileInfo.ftime,
+								sizeof(fileInfo.fname), fileInfo.fname);
+  					}
+  					f_closedir(&dir);
+  				} else {
+  					Report(true, "Error in f_opendir() - %u\r\n", res);
+  				}
+  			}
+  		}
+
   	}
   /* USER CODE END 5 */ 
 }

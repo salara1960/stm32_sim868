@@ -154,6 +154,20 @@ typedef enum {
 } speed_t;
 */
 
+typedef struct {
+	uint16_t day:5;//0..4 (1..31)
+	uint16_t mon:4;//5..8 (1..12)
+	uint16_t year:7;//9..15 (0..127) from 1980
+} fat_date_t;
+
+typedef struct {
+	uint16_t sec:5;//0..4 (0..29)
+	uint16_t min:6;//5..10 (0..59)
+	uint16_t hour:5;//11..15 (0..23)
+} fat_time_t;
+
+
+
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -166,6 +180,9 @@ const uint32_t max_wait_ms;
 I2C_HandleTypeDef *portBMP;
 I2C_HandleTypeDef *portSSD;
 I2C_HandleTypeDef *portBH;
+
+UART_HandleTypeDef *portLOG;
+SPI_HandleTypeDef *portSPI;
 
 /* USER CODE END EC */
 
@@ -215,6 +232,8 @@ void Leds(bool act, uint16_t Pin);
 #define LED_RED_GPIO_Port GPIOD
 #define LED_BLUE_Pin GPIO_PIN_15
 #define LED_BLUE_GPIO_Port GPIOD
+#define SD_CS_Pin GPIO_PIN_5
+#define SD_CS_GPIO_Port GPIOB
 #define SDA1_Pin GPIO_PIN_7
 #define SDA1_GPIO_Port GPIOB
 #define SCL1_Pin GPIO_PIN_8
@@ -225,6 +244,13 @@ void Leds(bool act, uint16_t Pin);
 #define LED_ERROR LED_RED_Pin
 #define GPIO_PortD GPIOD
 #define LOOP_FOREVER() while(1) {}
+
+#define SS_SD_SELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_RESET)
+#define SS_SD_DESELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET)
+#define LD_ON HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_RESET); //RED
+#define LD_OFF HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_SET); //RED
+
+
 
 /* USER CODE END Private defines */
 
