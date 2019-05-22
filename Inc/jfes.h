@@ -12,7 +12,7 @@
 //#define JFES_STRICT
 
 /** Maximal tokens count */
-#define JFES_MAX_TOKENS_COUNT   2048//4096//8192
+#define JFES_MAX_TOKENS_COUNT   1024//2048//4096//8192
 
 /** NULL define for the jfes library. */
 #ifndef JFES_NULL

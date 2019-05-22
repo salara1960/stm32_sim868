@@ -69,6 +69,7 @@ uint8_t n = 1, res;
 	SPI_SendByte((uint8_t)arg); // Argument[7..0]
 	//n = 1; // Dummy CRC + Stop
 	if (cmd == CMD0) n = 0x95; // Valid CRC for CMD0(0)
+	else
 	if (cmd == CMD8) n = 0x87; // Valid CRC for CMD8(0x1AA)
 	SPI_SendByte(n);	
 	// Receive a command response
@@ -141,19 +142,19 @@ uint8_t sd_ini(void)
 {
 uint8_t i, cmd, ret = 0, res = 0;//, cs = 0;
 int16_t tmr;
-uint32_t temp;
+//uint32_t temp;
 
 	LD_OFF;
 
 	sdinfo.type = 0;
 	uint8_t ocr[4];
-	temp = portSPI->Init.BaudRatePrescaler;
-	portSPI->Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_128; //140.4 //156.25 kbbs
-	HAL_SPI_Init(portSPI);
-	SS_SD_DESELECT();
-	for (i = 0; i < 10; i++) SPI_Release();
-	portSPI->Init.BaudRatePrescaler = temp;
-	HAL_SPI_Init(portSPI);
+	//temp = portSPI->Init.BaudRatePrescaler;
+	//portSPI->Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_128; //140.4 //156.25 kbbs
+	//HAL_SPI_Init(portSPI);
+	//SS_SD_DESELECT();
+	//for (i = 0; i < 10; i++) SPI_Release();
+	//portSPI->Init.BaudRatePrescaler = temp;
+	//HAL_SPI_Init(portSPI);
 	SS_SD_SELECT();
 	res = SD_cmd(CMD0, 0);
 	if (res == 1) {// Enter Idle state
@@ -194,3 +195,5 @@ uint32_t temp;
   return ret;
 }
 //-----------------------------------------------
+
+

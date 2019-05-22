@@ -11,7 +11,7 @@
 #define JFES_MAX_DIGITS                 64
 
 /** Needed for the default precision in jfes_double_to_string(_r). */
-#define JFES_DOUBLE_PRECISION           0.000000001
+#define JFES_DOUBLE_PRECISION           0.000001//0.000000001
 
 /** Needed for the boolean-related functions */
 #define JFES_TRUE_VALUE                 "true"
@@ -209,17 +209,14 @@ static int jfes_is_null(const char *data, jfes_size_t length) {
 
     \return         Zero if input string is not boolean. Otherwise anything.
 */
-static int jfes_is_boolean(const char *data, jfes_size_t length) {
-    if (!data) {
-        return 0;
-    }
+static int jfes_is_boolean(const char *data, jfes_size_t length)
+{
+	if (!data) return 0;
 
-    if (length == 0) {
-        length = jfes_strlen(data);
-    }
+    if (!length) length = jfes_strlen(data);
 
-    return length == jfes_strlen(JFES_TRUE_VALUE) && jfes_memcmp(data, JFES_TRUE_VALUE, length) == 0 ||
-           length == jfes_strlen(JFES_FALSE_VALUE) && jfes_memcmp(data, JFES_FALSE_VALUE, length) == 0;
+    return (length == jfes_strlen(JFES_TRUE_VALUE) && jfes_memcmp(data, JFES_TRUE_VALUE, length) == 0 ||
+           length == jfes_strlen(JFES_FALSE_VALUE) && jfes_memcmp(data, JFES_FALSE_VALUE, length) == 0);
 }
 
 /**

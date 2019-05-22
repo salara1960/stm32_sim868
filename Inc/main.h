@@ -48,6 +48,8 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
+#undef SET_SD_CARD
+
 #define MAX_QMSG 16
 
 #pragma pack(push,1)
@@ -84,9 +86,10 @@ typedef struct s_msg_t {
 } s_msg_t;
 
 typedef struct {
-	unsigned gps_log_show:1;
-	unsigned i2c_log_show:1;
-	unsigned none:6;
+	uint8_t gps_log_show:1;
+	uint8_t i2c_log_show:1;
+	uint8_t sd_list:1;
+	uint8_t none:5;
 } s_flags;
 #pragma pack(pop)
 
@@ -153,7 +156,7 @@ typedef enum {
 	HIGH_SPEED = 115200
 } speed_t;
 */
-
+#ifdef SET_SD_CARD
 typedef struct {
 	uint16_t day:5;//0..4 (1..31)
 	uint16_t mon:4;//5..8 (1..12)
@@ -165,7 +168,7 @@ typedef struct {
 	uint16_t min:6;//5..10 (0..59)
 	uint16_t hour:5;//11..15 (0..23)
 } fat_time_t;
-
+#endif
 
 
 /* USER CODE END ET */
@@ -200,7 +203,7 @@ SPI_HandleTypeDef *portSPI;
 #define WHITE_COLOR   "\x1b[37m"
 */
 #define wait_sensor_def 10
-#define MAX_UART_BUF 400//384//256
+#define MAX_UART_BUF 512//448//400//384//256
 
 /* USER CODE END EM */
 
@@ -245,11 +248,12 @@ void Leds(bool act, uint16_t Pin);
 #define GPIO_PortD GPIOD
 #define LOOP_FOREVER() while(1) {}
 
-#define SS_SD_SELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_RESET)
-#define SS_SD_DESELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET)
-#define LD_ON HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_RESET); //RED
-#define LD_OFF HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_SET); //RED
-
+//#ifdef SET_SD_CARD
+	#define SS_SD_SELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_RESET)
+	#define SS_SD_DESELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET)
+	#define LD_ON HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_SET); //RED
+	#define LD_OFF HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_RESET); //RED
+//#endif
 
 
 /* USER CODE END Private defines */

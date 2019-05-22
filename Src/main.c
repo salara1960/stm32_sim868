@@ -48,7 +48,10 @@
 															// set MAX_UART_BUF = 400 bytes
 //const char *ver = "ver 1.6rc2";//19.05.2019 - minor changes : add set DateTime (Unix epoch time), for example DATE:1558262631
 //const char *ver = "ver 1.6rc3";//19.05.2019 - minor changes : usart2 instead of uart4 (GPS port)
-const char *ver = "ver 1.7rc1";//20.05.2019 - major changes : add SD Card (SPI1) !!! (first step : list of root file system)
+//const char *ver = "ver 1.7rc1";//20.05.2019 - major changes : add SD Card (SPI1) !!! (first step : list of root file system)
+//const char *ver = "ver 1.7rc2";//20.05.2019 - minor changes : all files content print <- second step.
+//const char *ver = "ver 1.7rc3";//21.05.2019 - minor changes : write log file 'sensors.txt' to SD Card <- step 3.
+const char *ver = "ver 1.7rc4";//22.05.2019 - minor changes : in support SD card, data from sensors in json format <- step 4.
 
 
 
@@ -95,6 +98,8 @@ osMessageQueueId_t mailQueueHandle;
 osSemaphoreId_t binSemHandle;
 /* USER CODE BEGIN PV */
 
+const char *dev_name = "STM32_SIM868";
+
 volatile static uint32_t secCounter = 0;
 volatile static uint64_t HalfSecCounter = 0;
 
@@ -116,6 +121,7 @@ static bool setDate = false;
 static bool epochSet = false;
 volatile static uint32_t extDate = 0;
 
+static char DefBuf[MAX_UART_BUF];
 
 static char RxBuf[MAX_UART_BUF];
 volatile uint8_t rx_uk;
@@ -164,7 +170,12 @@ const char *cmds[] = {
 };
 
 uint8_t *adrByte = NULL;
-volatile s_flags flags = {0, 0, 0};
+volatile s_flags flags = {0, 0, 0, 0};
+
+#ifdef SET_SD_CARD
+const char *dirPath = "/";
+const char *sens_file_name = "sensors.txt";
+#endif
 
 /* USER CODE END PV */
 
@@ -320,7 +331,7 @@ int main(void)
   const osThreadAttr_t defTask_attributes = {
     .name = "defTask",
     .priority = (osPriority_t) osPriorityAboveNormal,
-    .stack_size = 2048
+    .stack_size = 2560
   };
   defTaskHandle = osThreadNew(StartDefTask, NULL, &defTask_attributes);
 
@@ -454,7 +465,9 @@ static void MX_SPI1_Init(void)
 {
 
   /* USER CODE BEGIN SPI1_Init 0 */
+#ifdef SET_SD_CARD
 	SS_SD_DESELECT();
+#endif
   /* USER CODE END SPI1_Init 0 */
 
   /* USER CODE BEGIN SPI1_Init 1 */
@@ -617,7 +630,7 @@ static void MX_USART3_UART_Init(void)
 {
 
   /* USER CODE BEGIN USART3_Init 0 */
-
+//			LOG port
   /* USER CODE END USART3_Init 0 */
 
   /* USER CODE BEGIN USART3_Init 1 */
@@ -1040,36 +1053,45 @@ void LogData()
 			} else setDate = true;
 			evt_clear = true;
 		} else {
-			if (strstr(RxBuf, "GSM:")) {
-				evt_gsm = true;
+#ifdef SET_SD_CARD
+			if (strstr(RxBuf, "LIST:")) {
+				flags.sd_list = 1;
 				priz = true;
 			} else {
-				if (strstr(RxBuf, "GPS:")) {
-					flags.gps_log_show = ~flags.gps_log_show;
+#endif
+				if (strstr(RxBuf, "GSM:")) {
+					evt_gsm = true;
 					priz = true;
 				} else {
-					if (strstr(RxBuf, "I2C:")) {
-						flags.i2c_log_show = ~flags.i2c_log_show;
+					if (strstr(RxBuf, "GPS:")) {
+						flags.gps_log_show = ~flags.gps_log_show;
 						priz = true;
 					} else {
-						if (strstr(RxBuf, "RESTART:")) {
-							ssd1306_clear(); NVIC_SystemReset();
+						if (strstr(RxBuf, "I2C:")) {
+							flags.i2c_log_show = ~flags.i2c_log_show;
+							priz = true;
 						} else {
-							if (strstr(RxBuf, "AT")) {
-								strcat(RxBuf, "\n"); priz = true;
+							if (strstr(RxBuf, "RESTART:")) {
+								ssd1306_clear(); NVIC_SystemReset();
 							} else {
-								if ((uk = strchr(RxBuf, '\r')) != NULL) *uk = '\0';
-							}
-							int len = strlen(RxBuf);
-							char *buff = (char *)calloc(1, len + 1);
-							if (buff) {
-								memcpy(buff, RxBuf, len);
-								if (putQ(buff, &q_cmd) < 0) free(buff);
+								if (strstr(RxBuf, "AT")) {
+									strcat(RxBuf, "\n"); priz = true;
+								} else {
+									if ((uk = strchr(RxBuf, '\r')) != NULL) *uk = '\0';
+								}
+								int len = strlen(RxBuf);
+								char *buff = (char *)calloc(1, len + 1);
+								if (buff) {
+									memcpy(buff, RxBuf, len);
+									if (putQ(buff, &q_cmd) < 0) free(buff);
+								}
 							}
 						}
 					}
 				}
+#ifdef SET_SD_CARD
 			}
+#endif
 
 			if (priz) {
 				ssd1306_clear_line(5);
@@ -1131,6 +1153,7 @@ void AtParamInit()
 void GpsParamInit()
 {
 	gps_rx_uk = 0;
+	rmc5 = 2;
 	memset(GpsRxBuf, 0, MAX_UART_BUF);
 	initQ(&q_gps);
 	HAL_UART_Receive_IT(portGPS, (uint8_t *)&gRxByte, 1);//GPS
@@ -1310,6 +1333,7 @@ int8_t parse_inf(char *in, s_inf_t *inf)
 	}
 	return 0;
 }
+#ifdef SET_SD_CARD
 //------------------------------------------------------------------------------------------
 static char *fatAttr(uint8_t attr)
 {
@@ -1327,6 +1351,64 @@ static char *fatAttr(uint8_t attr)
 	}
 	return "Unknown";
 }
+//-----------------------------------------------------------------------------------
+// print <= 16 line from file
+void print_file(const char *filename)
+{
+	FIL fp;
+	if (!f_open (&fp, filename, FA_READ)) {
+		char *stx = (char *)pvPortMalloc(256);
+		if (stx) {
+			while (f_gets(stx, 253, &fp)) {
+				if (!strchr(stx, '\r')) strcat(stx, "\r");
+				Report(false, stx);
+				stx[0] = 0;
+    		}
+			vPortFree(stx);
+    	}
+    	f_close(&fp);
+    }
+
+}
+//------------------------------------------------------------------------------------------
+int save_file(const char *ffname, const char *str)
+{
+int res = 0;
+FIL fp;
+
+	if (!f_open(&fp, ffname, FA_OPEN_ALWAYS | FA_WRITE)) {
+		if (!f_lseek(&fp, f_size(&fp))) {
+			res = f_puts(str, &fp);
+		}
+		f_close(&fp);
+	}
+
+	return res;
+}
+//------------------------------------------------------------------------------------------
+void list_dir(const char *folder)
+{
+	DIR dir;
+	FRESULT res = f_opendir(&dir, folder);
+	if (res == FR_OK) {
+		FILINFO fileInfo;
+		int nFiles = 0;
+		while (((res = f_readdir(&dir, &fileInfo)) == FR_OK) && (fileInfo.fname[0] != 0)) {
+  			nFiles++;
+  			fat_date_t *fdate = (fat_date_t *)&fileInfo.fdate;
+  			fat_time_t *ftime = (fat_time_t *)&fileInfo.ftime;
+  			Report(true, "\t%d: %lu\t%s\t%02u.%02u.%04u %02u:%02u:%02u\t'%.*s'\r\n",
+  					nFiles,
+					fileInfo.fsize,
+					fatAttr(fileInfo.fattrib),
+					fdate->day, fdate->mon, fdate->year + 1980,	//fileInfo.fdate,
+					ftime->hour, ftime->min, ftime->sec,  		//fileInfo.ftime,
+					sizeof(fileInfo.fname), fileInfo.fname);
+		}
+		f_closedir(&dir);
+	}
+}
+#endif
 
 //------------------------------------------------------------------------------------------
 
@@ -1342,27 +1424,50 @@ static char *fatAttr(uint8_t attr)
 void StartDefTask(void *argument)
 {
   /* init code for FATFS */
-  MX_FATFS_Init();
+
+	MX_FATFS_Init();
 
   /* USER CODE BEGIN 5 */
 
-  	  osDelay(1000);
-  	  //for FatFS
-  	  FRESULT mnt = FR_DISK_ERR;
-  	  FATFS dsk;
-  	  mnt = f_mount(&dsk, "SD1", 1);
-  	  if (mnt != FR_OK) Report(true, "Disk 'SD1' mount Error - %d\r\n", mnt);
-  	  	  	  	   else Report(true, "Disk 'SD1' mount OK !\r\n");
+	osDelay(1000);
 
-  	uint8_t row;
-  	char toScreen[SCREEN_SIZE];
-  	result_t levt;
-  	iresult_t evt;
-  	uint8_t show;
+	uint8_t row;
+	char toScreen[SCREEN_SIZE];
+	result_t levt;
+	iresult_t evt;
+	uint8_t show;
 
-  /* Infinite loop */
 
-  	uint32_t fs_tmr = get_tmr(8);
+#ifdef SET_SD_CARD
+	//for FatFS
+	char tmp[64];
+	int rt = 0, cnt = 0;
+	FRESULT mnt = FR_DISK_ERR;
+	FATFS dsk;
+	FATFS *udsk = &dsk;
+	mnt = f_mount(&dsk, "SD1", 1);
+	if (mnt != FR_OK) Report(true, "Disk 'SD1' mount Error - %d\r\n", mnt);
+	else {
+		DWORD fre_clust = 0, fre_sect = 0, tot_sect = 0;
+		f_getfree("SD1", &fre_clust, &udsk);
+		tot_sect = (udsk->n_fatent - 2) * udsk->csize;
+		fre_sect = fre_clust * udsk->csize;
+		Report(true, "Disk 'SD1' mount OK. Space : total %lu KB, free %lu KB.\r\n", tot_sect/2, fre_sect/2);
+		list_dir(dirPath);
+		sprintf(tmp, "%s%s", dirPath, sens_file_name);
+		if (!f_unlink(tmp)) { Report(true, "Delete file '%s' OK !\r\n", tmp); osDelay(1000); }
+					   else Report(true, "Delete file '%s' ERROR !\r\n", tmp);
+	}
+#endif
+
+	jfes_config_t jconf = {
+		.jfes_malloc = (jfes_malloc_t)pvPortMalloc,
+		.jfes_free = vPortFree
+	};
+	jfes_value_t *obj  = NULL;
+	jfes_size_t buf_size = MAX_UART_BUF - 1;
+
+	/* Infinite loop */
 
   	while (1)   {
   		/**/
@@ -1371,63 +1476,79 @@ void StartDefTask(void *argument)
   				mkMsgData(&levt, &evt);
   				show = flags.i2c_log_show;
   				row = 6;
+  				if (show) {
+  					obj = jfes_create_object_value(&jconf);
+  					jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, "SENSOR", 0), "MsgType", 0);
+  					jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, dev_name, 0), "DevName", 0);
+  					jfes_set_object_property(&jconf, obj, jfes_create_integer_value(&jconf, get_secCounter()), "DevTime", 0);
+  					if (setDate) jfes_set_object_property(&jconf, obj, jfes_create_integer_value(&jconf, extDate), "EpochTime", 0);
+  					jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)levt.pres), "Press", 0);
+  					jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)levt.temp), "Temp", 0);
+  					jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)levt.lux), "Lux", 0);
+  				} else obj = NULL;
   				sprintf(toScreen, "mmHg : %u.%02u\nDegC : %u.%02u", evt.pres.cel, evt.pres.dro, evt.temp.cel, evt.temp.dro);
   				switch (evt.chip) {
   					case BMP280_SENSOR :
   						sprintf(toScreen, "mmHg : %u.%02u\nDegC : %u.%02u", evt.pres.cel, evt.pres.dro, evt.temp.cel, evt.temp.dro);
-  						if (show) Report(true, "BMP280: Press=%u.%02u mmHg, Temp=%u.%02u DegC; BH1750: Lux=%u.%02u lx\r\n",
+  						if (show) sprintf(DefBuf, "BMP280: Press=%u.%02u mmHg, Temp=%u.%02u DegC; BH1750: Lux=%u.%02u lx\r\n",
   										evt.pres.cel, evt.pres.dro, evt.temp.cel, evt.temp.dro, evt.lux.cel, evt.lux.dro);
-  				  	break;
+  					break;
   					case BME280_SENSOR :
   						row = 5;
   						sprintf(toScreen, "mmHg : %u.%02u\nDegC : %u.%02u\nHumi: %u.%02u %%rH",
   										evt.pres.cel, evt.pres.dro, evt.temp.cel, evt.temp.dro, evt.humi.cel, evt.humi.dro);
-  				  		if (show) Report(true, "BME280: Press=%u.%02u mmHg, Temp=%u.%02u DegC Humidity=%u.%02u %%rH; BH1750: Lux=%u.%02u lx\r\n",
+  				  		if (show) sprintf(DefBuf, "BME280: Press=%u.%02u mmHg, Temp=%u.%02u DegC Humidity=%u.%02u %%rH; BH1750: Lux=%u.%02u lx\r\n",
   				  						evt.pres.cel, evt.pres.dro, evt.temp.cel, evt.temp.dro, evt.humi.cel, evt.humi.dro, evt.lux.cel, evt.lux.dro);
+  				  		if (obj) jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)levt.humi), "Humi", 0);
   				  	break;
   				  		default : {
   				  			sprintf(toScreen, "\n\n");
-  				  			if (show) Report(true, "Unknown chip; BH1750: Lux=%u.%02u lx\r\n", evt.lux.cel, evt.lux.dro);
+  				  			if (show) sprintf(DefBuf, "Unknown chip; BH1750: Lux=%u.%02u lx\r\n", evt.lux.cel, evt.lux.dro);
   				  		}
   				}
   				//
-  				if (i2cError == HAL_OK) {
+  				if (!i2cError) {
   					sprintf(toScreen+strlen(toScreen), "\nLux  : %u.%02u", evt.lux.cel, evt.lux.dro);
   					ssd1306_text_xy(toScreen, 1, row);//send string to screen
   				}
   				//
+  				if (show) Report(true, DefBuf);
+
+#ifdef SET_SD_CARD
+  				if (!mnt) {
+  					sprintf(tmp, "%s%s", dirPath, sens_file_name);
+  					rt = save_file((const char *)tmp, DefBuf);
+  					if (rt > 0) cnt++;
+  					Report(false, "\tWrite to file '%s' +%d bytes (%d)\r\n", tmp, rt, cnt);
+  					list_dir(dirPath);
+  				}
+#endif
+  				if (obj) {
+  					buf_size = MAX_UART_BUF - 1;
+  					jfes_value_to_string(obj, DefBuf, &buf_size, 1);
+  					DefBuf[buf_size] = '\0';
+
+  					jfes_free_value(&jconf, obj);
+  					obj = NULL;
+
+  					if (show) Report(false, "%s\r\n", DefBuf);
+  				}
+
   			}
   		}
 		/**/
   		osDelay(100);
   		/**/
-  		if (check_tmr(fs_tmr)) {
-  			fs_tmr = get_tmr(30);
-  			if (mnt == FR_OK) {
-  				DIR dir;
-  				FILINFO fileInfo;
-  				int nFiles = 0;
-  				FRESULT res = f_opendir(&dir, "/");
-  				if (res == FR_OK) {
-  					while (((res = f_readdir(&dir, &fileInfo)) == FR_OK) && (fileInfo.fname[0] != 0)) {
-  						nFiles++;
-  						fat_date_t *fdate = (fat_date_t *)&fileInfo.fdate;
-  						fat_time_t *ftime = (fat_time_t *)&fileInfo.ftime;
-  						Report(true, "\t%d: %lu\t%s\t%02u.%02u.%04u %02u:%02u:%02u\t'%.*s'\r\n",
-  								nFiles,
-								fileInfo.fsize,
-								fatAttr(fileInfo.fattrib),
-								fdate->day, fdate->mon, fdate->year + 1980,	//fileInfo.fdate,
-								ftime->hour, ftime->min, ftime->sec,  		//fileInfo.ftime,
-								sizeof(fileInfo.fname), fileInfo.fname);
-  					}
-  					f_closedir(&dir);
-  				} else {
-  					Report(true, "Error in f_opendir() - %u\r\n", res);
-  				}
+  		if (flags.sd_list) {
+  			flags.sd_list = 0;
+#ifdef SET_SD_CARD
+  			if (!mnt) {
+  				list_dir(dirPath);
+  				Report(false, "\tList of dir '%s':\r\n", dirPath);
   			}
+#endif
   		}
-
+  		//
   	}
   /* USER CODE END 5 */ 
 }
@@ -1458,7 +1579,7 @@ void StartSensTask(void *argument)
 
   /* Infinite loop */
 
-	uint32_t wait_sensor = get_tmr(6);
+	uint32_t wait_sensor = get_tmr(wait_sensor_def);
 
 	bh1750_on_mode();
 
@@ -1531,7 +1652,7 @@ void StartAtTask(void *argument)
 	/**/
 	char toScr[SCREEN_SIZE];
 	size_t fmem = xPortGetFreeHeapSize();
-	ssd1306_text_xy(toScr, ssd1306_calcx(sprintf(toScr, "f:%u on:%u.%u", fmem, onGSM, onGNS)), 2);
+	//ssd1306_text_xy(toScr, ssd1306_calcx(sprintf(toScr, "f:%u on:%u.%u", fmem, onGSM, onGNS)), 2);
 	/**/
 
 	/* Infinite loop */
@@ -1540,6 +1661,7 @@ void StartAtTask(void *argument)
 		if (getQ(msgAT, &q_at) >= 0) {
 			if (strstr(msgAT, "NORMAL POWER DOWN")) {
 				onGSM = false;
+				flags.gps_log_show = flags.i2c_log_show = 0;
 				if (!wait_ack) wait_ack = get_tmr(3);
 			} else if (strlen(msgAT)) {
 				onGSM = true;
@@ -1570,7 +1692,7 @@ void StartAtTask(void *argument)
 				counter = 0;
 				cmdsInd = 0;
 				cmdsDone = true;
-				new_cmds = get_hstmr(8);//3 sec
+				new_cmds = get_hstmr(6);//6 - 1.5 sec //8//3 sec
 			}
 			Report(false, msgAT);
 			/**/
@@ -1585,8 +1707,7 @@ void StartAtTask(void *argument)
 		if (cmdsInd >= 0) {
 			if (cmdsInd >= cmdsMax) {
 				cmdsInd = -1;
-				flags.gps_log_show = 1;
-				flags.i2c_log_show = 1;
+				flags.gps_log_show = flags.i2c_log_show = 1;
 			} else {
 				if (cmdsDone) {
 					if (check_hstmr(new_cmds)) {
@@ -1635,7 +1756,7 @@ void StartAtTask(void *argument)
 			gsmONOFF();
 		}
 
-		osDelay(2);
+		osDelay(10);
 	}
 
   /* USER CODE END StartAtTask */
@@ -1676,7 +1797,7 @@ void StartGpsTask(void *argument)
 	};
 	jfes_value_t *obj  = NULL;
 	jfes_value_t *obj2 = NULL;
-	jfes_size_t stx_size = MAX_UART_BUF - 3;
+	jfes_size_t stx_size  = MAX_UART_BUF - 1;
 	jfes_size_t stx_size2 = stx_size;
 
   /* Infinite loop */
@@ -1684,15 +1805,19 @@ void StartGpsTask(void *argument)
 	while (1) {
 
 		if (getQ(msgNMEA, &q_gps) >= 0) {
-			if (flags.gps_log_show) {
-				Report(true, msgNMEA);
-				if (!parse_gps(msgNMEA, &one)) {
+			Report(true, msgNMEA);
+			if (!parse_gps(msgNMEA, &one)) {
+				if (flags.gps_log_show) {
 					obj = jfes_create_object_value(&jconf);
 					if (obj) {
+						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, "$GNRMC", 0), "MsgType", 0);
+						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, dev_name, 0), "DevName", 0);
+						jfes_set_object_property(&jconf, obj, jfes_create_integer_value(&jconf, get_secCounter()), "DevTime", 0);
+						if (setDate) jfes_set_object_property(&jconf, obj, jfes_create_integer_value(&jconf, extDate), "EpochTime", 0);
 						dl = sprintf(msgNMEA, "%02u.%02u.%02u %02u:%02u:%02u.%03u",
-								one.day, one.mon, one.year, one.hour, one.min, one.sec, one.ms);
+												one.day, one.mon, one.year, one.hour, one.min, one.sec, one.ms);
 						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, msgNMEA, dl), "UTC", 0);
-						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, nameValid[one.good], 0), "Data", 0);
+						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, nameValid[one.good], 0), "Status", 0);
 						if (one.ns) one.latitude *= -1.0;
 						jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)one.latitude), "Latitude", 0);
 						if (one.ew) one.longitude *= -1.0;
@@ -1704,26 +1829,31 @@ void StartGpsTask(void *argument)
 						dl = sprintf(msgNMEA, "%02X", one.crc);
 						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, msgNMEA, dl), "CRC", 0);
 
-						memset(msgNMEA, 0, MAX_UART_BUF);
+						stx_size = MAX_UART_BUF - 1;
 						jfes_value_to_string(obj, msgNMEA, &stx_size, 1);
-						strcat(msgNMEA, "\r\n");
+						msgNMEA[stx_size] = '\0';
 						jfes_free_value(&jconf, obj);
+						obj = NULL;
 
-						Report(false, msgNMEA);
+						Report(false, "%s\r\n", msgNMEA);
 					}
 				}
 			}
 
-			osDelay(50);
+			osDelay(100);
 
 			if (!parse_inf(msgNMEA, &inf)) {
 				obj2 = jfes_create_object_value(&jconf2);
 				if (obj2) {
+					jfes_set_object_property(&jconf2, obj2, jfes_create_string_value(&jconf2, "+CGNSINF", 0), "MsgType", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_string_value(&jconf2, dev_name, 0), "DevName", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, get_secCounter()), "DevTime", 0);
+					if (setDate) jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, extDate), "EpochTime", 0);
 					dl = sprintf(msgNMEA, "%02u.%02u.%04u %02u:%02u:%02u.%03u",
-							inf.utc.day, inf.utc.mon, inf.utc.year, inf.utc.hour, inf.utc.min, inf.utc.sec, inf.utc.ms);
+										inf.utc.day, inf.utc.mon, inf.utc.year, inf.utc.hour, inf.utc.min, inf.utc.sec, inf.utc.ms);
 					jfes_set_object_property(&jconf2, obj2, jfes_create_string_value(&jconf2, msgNMEA, dl), "UTC", 0);
 					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, inf.run), "Run", 0);
-					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, inf.status), "Status", 0);
+					jfes_set_object_property(&jconf2, obj2, jfes_create_string_value(&jconf2, nameValid[inf.status&1], 0), "Status", 0);
 					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.latitude), "Latitude", 0);
 					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.longitude), "Longitude", 0);
 					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, inf.altitude), "Altitude", 0);
@@ -1740,21 +1870,18 @@ void StartGpsTask(void *argument)
 					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.HPA), "HPA", 0);
 					jfes_set_object_property(&jconf2, obj2, jfes_create_double_value(&jconf2, (double)inf.VPA), "VPA", 0);
 
-					memset(msgNMEA, 0, MAX_UART_BUF);
+					stx_size2 = MAX_UART_BUF - 1;
 					jfes_value_to_string(obj2, msgNMEA, &stx_size2, 1);
-					strcat(msgNMEA, "\r\n");
-
+					msgNMEA[stx_size2] = '\0';
 					jfes_free_value(&jconf2, obj2);
+					obj2 = NULL;
 
-					//Report(false, "strlen(msgNMEA) = %u\r\n", strlen(msgNMEA));
-
-					Report(false, msgNMEA);
+					Report(false, "%s (size=%u)\r\n", msgNMEA, stx_size2);
 				}
 			}
-
 		}
 
-		osDelay(50);
+		osDelay(100);
 
 	}
 

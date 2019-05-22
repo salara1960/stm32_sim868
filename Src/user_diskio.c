@@ -18,6 +18,7 @@
   */
  /* USER CODE END Header */
 
+
 #ifdef USE_OBSOLETE_USER_CODE_SECTION_0
 /* 
  * Warning: the user section 0 is no more in use (starting from CubeMx version 4.16.0)
@@ -41,6 +42,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
+
 
 /* Private variables ---------------------------------------------------------*/
 /* Disk status */
@@ -244,5 +246,6 @@ DRESULT USER_ioctl (
   /* USER CODE END IOCTL */
 }
 #endif /* _USE_IOCTL == 1 */
+
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
