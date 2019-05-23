@@ -50,7 +50,7 @@ extern "C" {
 
 #define SET_SD_CARD
 
-#define MAX_QMSG 16
+#define MAX_QMSG 8
 
 #pragma pack(push,1)
 typedef struct {
@@ -224,6 +224,8 @@ void Leds(bool act, uint16_t Pin);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define USER_IN_Pin GPIO_PIN_0
+#define USER_IN_GPIO_Port GPIOA
 #define GSM_STAT_Pin GPIO_PIN_2
 #define GSM_STAT_GPIO_Port GPIOA
 #define GSM_KEY_Pin GPIO_PIN_3

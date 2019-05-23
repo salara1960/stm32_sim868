@@ -52,8 +52,8 @@
 //const char *ver = "ver 1.7rc2";//20.05.2019 - minor changes : all files content print <- second step.
 //const char *ver = "ver 1.7rc3";//21.05.2019 - minor changes : write log file 'sensors.txt' to SD Card <- step 3.
 //const char *ver = "ver 1.7rc4";//22.05.2019 - minor changes : in support SD card, data from sensors in json format <- step 4.
-const char *ver = "ver 1.7rc5";//22.05.2019 - minor changes : support next command : 'DATE:','MOUNT:','UMNT:','LIST:','RESTART:','STOP','GPS:','GSM:','I2C:' <- step 5.
-
+//const char *ver = "ver 1.7rc5";//22.05.2019 - minor changes : support next command : 'DATE:','MOUNT:','UMNT:','LIST:','RESTART:','STOP','GPS:','GSM:','I2C:' <- step 5.
+const char *ver = "ver 1.8rc1";//23.05.2019 - major changes : set UART4_TX from PA0 to PC10 (PA0 now for command 'STOP')
 
 
 /*
@@ -334,7 +334,7 @@ int main(void)
   const osThreadAttr_t defTask_attributes = {
     .name = "defTask",
     .priority = (osPriority_t) osPriorityAboveNormal,
-    .stack_size = 2560
+    .stack_size = 2048
   };
   defTaskHandle = osThreadNew(StartDefTask, NULL, &defTask_attributes);
 
@@ -484,7 +484,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;//_4;//_8;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -689,6 +689,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);
@@ -698,6 +699,12 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : USER_IN_Pin */
+  GPIO_InitStruct.Pin = USER_IN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(USER_IN_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : GSM_STAT_Pin */
   GPIO_InitStruct.Pin = GSM_STAT_Pin;
@@ -1457,8 +1464,7 @@ void list_dir(const char *folder)
 void StartDefTask(void *argument)
 {
   /* init code for FATFS */
-
-	MX_FATFS_Init();
+  MX_FATFS_Init();
 
   /* USER CODE BEGIN 5 */
 
@@ -1597,7 +1603,7 @@ void StartDefTask(void *argument)
   			if (mnt) {
   				mnt = f_mount(&dsk, diskName, 1);
   				if (mnt != FR_OK) Report(true, "Disk '%s' mount Error - %d\r\n", diskName, mnt);
-  							 else Report(true, "Disk '%s' mount OK\r\n");
+  							 else Report(true, "Disk '%s' mount OK\r\n",diskName);
   			}
   		}
 #endif
@@ -2005,6 +2011,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			  else
 				  HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//gsm is off
 		  }
+		  if (HAL_GPIO_ReadPin(USER_IN_GPIO_Port, USER_IN_Pin) == GPIO_PIN_SET) {//user key is pressed
+			  if (!flags.stop) {
+#ifdef SET_SD_CARD
+				  flags.sd_umount = 1;
+#endif
+				  flags.stop = 1;
+			  }
+		  }
+		  //if (!i2cError) ssd1306_text_xy(scrBuf, ssd1306_calcx(sprintf(scrBuf, "PA0 = %u", ps)), 5);
 	  }
 	  inc_hsCounter();
 
