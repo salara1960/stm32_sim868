@@ -48,7 +48,7 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
-#undef SET_SD_CARD
+#define SET_SD_CARD
 
 #define MAX_QMSG 16
 
@@ -89,7 +89,11 @@ typedef struct {
 	uint8_t gps_log_show:1;
 	uint8_t i2c_log_show:1;
 	uint8_t sd_list:1;
-	uint8_t none:5;
+	uint8_t sd_mount:1;
+	uint8_t sd_umount:1;
+	uint8_t restart:1;
+	uint8_t stop:1;
+	uint8_t none:1;
 } s_flags;
 #pragma pack(pop)
 
@@ -203,7 +207,8 @@ SPI_HandleTypeDef *portSPI;
 #define WHITE_COLOR   "\x1b[37m"
 */
 #define wait_sensor_def 10
-#define MAX_UART_BUF 512//448//400//384//256
+#define MAX_UART_BUF 512//480//400//384//256
+#define maxLogSize 65536
 
 /* USER CODE END EM */
 

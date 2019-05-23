@@ -51,7 +51,8 @@
 //const char *ver = "ver 1.7rc1";//20.05.2019 - major changes : add SD Card (SPI1) !!! (first step : list of root file system)
 //const char *ver = "ver 1.7rc2";//20.05.2019 - minor changes : all files content print <- second step.
 //const char *ver = "ver 1.7rc3";//21.05.2019 - minor changes : write log file 'sensors.txt' to SD Card <- step 3.
-const char *ver = "ver 1.7rc4";//22.05.2019 - minor changes : in support SD card, data from sensors in json format <- step 4.
+//const char *ver = "ver 1.7rc4";//22.05.2019 - minor changes : in support SD card, data from sensors in json format <- step 4.
+const char *ver = "ver 1.7rc5";//22.05.2019 - minor changes : support next command : 'DATE:','MOUNT:','UMNT:','LIST:','RESTART:','STOP','GPS:','GSM:','I2C:' <- step 5.
 
 
 
@@ -169,12 +170,14 @@ const char *cmds[] = {
 	"AT+CGNSINF\r\n"
 };
 
+volatile static bool LoopAll = true;
 uint8_t *adrByte = NULL;
-volatile s_flags flags = {0, 0, 0, 0};
+volatile s_flags flags = {0, 0, 0, 0, 0, 0, 0, 0};
 
 #ifdef SET_SD_CARD
-const char *dirPath = "/";
-const char *sens_file_name = "sensors.txt";
+	const char *diskName = "SD1";
+	const char *dirPath = "/";
+	const char *sens_file_name = "sensors.txt";
 #endif
 
 /* USER CODE END PV */
@@ -987,14 +990,13 @@ void getNMEA()
 			rmc5++;
 			if (rmc5 >= wait_sensor_def) {
 				rmc5 = 0;
-				int len = strlen(GpsRxBuf);
-				char *buff = (char *)calloc(1, len + 1);
-				if (buff) {
+				if (LoopAll) {
+					int len = strlen(GpsRxBuf);
+					char *buff = (char *)calloc(1, len + 1);
 					memcpy(buff, GpsRxBuf, len);
 					int8_t sta = putQ(buff, &q_gps);
 					if (sta < 0) free(buff);//error !
-					        else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);//add to q_gps OK
-
+							else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);//add to q_gps OK
 					ssd1306_text_xy(GpsRxBuf, ssd1306_calcx(sprintf(GpsRxBuf, "RMC:%lu %d", ++rmcCounter, sta)), 3);
 				}
 			} else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
@@ -1013,16 +1015,18 @@ void getAT()
 	if (at_rx_uk > 0) {
 		if ( ( (aRxByte == 0x0a) || (aRxByte == 0x3e) ) && adone) {// '\n' || '>'
 			if (aRxByte != 0x3e) strcat(AtRxBuf, "\r\n");
-			int len = strlen(AtRxBuf);
-			char *buff = (char *)calloc(1, len + 1);
-			if (buff) {
-				memcpy(buff, AtRxBuf, len);
-				if (putQ(buff, &q_at) < 0) free(buff);
-				if (strstr(AtRxBuf, "+CGNSINF:")) {
-					char *buff2 = (char *)calloc(1, len + 1);
-					if (buff2) {
-						memcpy(buff2, AtRxBuf, len);
-						if (putQ(buff2, &q_gps) < 0) free(buff2);
+			if (LoopAll) {
+				int len = strlen(AtRxBuf);
+				char *buff = (char *)calloc(1, len + 1);
+				if (buff) {
+					memcpy(buff, AtRxBuf, len);
+					if (putQ(buff, &q_at) < 0) free(buff);
+					if (strstr(AtRxBuf, "+CGNSINF:")) {
+						char *buff2 = (char *)calloc(1, len + 1);
+						if (buff2) {
+							memcpy(buff2, AtRxBuf, len);
+							if (putQ(buff2, &q_gps) < 0) free(buff2);
+						}
 					}
 				}
 			}
@@ -1054,36 +1058,54 @@ void LogData()
 			evt_clear = true;
 		} else {
 #ifdef SET_SD_CARD
-			if (strstr(RxBuf, "LIST:")) {
-				flags.sd_list = 1;
-				priz = true;
+			if (strstr(RxBuf, "UMNT:")) {
+				if (!flags.sd_umount) {
+					flags.sd_umount = 1; priz = true;
+				}
+			} else if (strstr(RxBuf, "MOUNT:")) {
+				if (!flags.sd_mount) {
+					flags.sd_mount = 1; priz = true;
+				}
+			} else if (strstr(RxBuf, "LIST:")) {
+				flags.sd_list = 1; priz = true;
 			} else {
 #endif
 				if (strstr(RxBuf, "GSM:")) {
-					evt_gsm = true;
-					priz = true;
+					evt_gsm = true; priz = true;
 				} else {
 					if (strstr(RxBuf, "GPS:")) {
-						flags.gps_log_show = ~flags.gps_log_show;
-						priz = true;
+						flags.gps_log_show = ~flags.gps_log_show; priz = true;
 					} else {
 						if (strstr(RxBuf, "I2C:")) {
-							flags.i2c_log_show = ~flags.i2c_log_show;
-							priz = true;
+							flags.i2c_log_show = ~flags.i2c_log_show; priz = true;
 						} else {
 							if (strstr(RxBuf, "RESTART:")) {
-								ssd1306_clear(); NVIC_SystemReset();
+#ifdef SET_SD_CARD
+								flags.sd_umount = 1;
+#endif
+								if (LoopAll) flags.restart = 1;
+								else {
+									ssd1306_clear();
+									NVIC_SystemReset();
+								}
+							} else  if (strstr(RxBuf, "STOP:")) {
+#ifdef SET_SD_CARD
+								flags.sd_umount = 1;
+#endif
+								flags.stop = 1;
 							} else {
 								if (strstr(RxBuf, "AT")) {
 									strcat(RxBuf, "\n"); priz = true;
 								} else {
 									if ((uk = strchr(RxBuf, '\r')) != NULL) *uk = '\0';
 								}
-								int len = strlen(RxBuf);
-								char *buff = (char *)calloc(1, len + 1);
-								if (buff) {
-									memcpy(buff, RxBuf, len);
-									if (putQ(buff, &q_cmd) < 0) free(buff);
+								if (LoopAll) {
+									int len = strlen(RxBuf);
+									char *buff = (char *)calloc(1, len + 1);
+									if (buff) {
+										memcpy(buff, RxBuf, len);
+										if (putQ(buff, &q_cmd) < 0) free(buff);
+									}
 								}
 							}
 						}
@@ -1333,6 +1355,7 @@ int8_t parse_inf(char *in, s_inf_t *inf)
 	}
 	return 0;
 }
+
 #ifdef SET_SD_CARD
 //------------------------------------------------------------------------------------------
 static char *fatAttr(uint8_t attr)
@@ -1371,17 +1394,26 @@ void print_file(const char *filename)
 
 }
 //------------------------------------------------------------------------------------------
-int save_file(const char *ffname, const char *str)
+int save_file(const char *ffname, const char *str, int *counter)
 {
-int res = 0;
+int res = 0, cnt = *counter;
 FIL fp;
 
 	if (!f_open(&fp, ffname, FA_OPEN_ALWAYS | FA_WRITE)) {
-		if (!f_lseek(&fp, f_size(&fp))) {
-			res = f_puts(str, &fp);
+		FSIZE_t sz = f_size(&fp);
+		if ((sz + strlen(str)) > (DWORD)maxLogSize) {
+			cnt = 0;
+			f_close(&fp);
+			if (!f_unlink(ffname)) Report(true, "Delete file '%s' OK !\r\n", ffname);
+							  else Report(true, "Delete file '%s' ERROR !\r\n", ffname);
+		} else {
+			if (!f_lseek(&fp, sz)) res = f_puts(str, &fp);
+			f_close(&fp);
 		}
-		f_close(&fp);
 	}
+
+	if (res > 0) cnt++;
+	*counter = cnt;
 
 	return res;
 }
@@ -1397,7 +1429,8 @@ void list_dir(const char *folder)
   			nFiles++;
   			fat_date_t *fdate = (fat_date_t *)&fileInfo.fdate;
   			fat_time_t *ftime = (fat_time_t *)&fileInfo.ftime;
-  			Report(true, "\t%d: %lu\t%s\t%02u.%02u.%04u %02u:%02u:%02u\t'%.*s'\r\n",
+  			if ((fileInfo.fattrib >= 1)  && (fileInfo.fattrib <= 0x20))
+  				Report(true, "\t%d: %lu\t%s\t%02u.%02u.%04u %02u:%02u:%02u\t'%.*s'\r\n",
   					nFiles,
 					fileInfo.fsize,
 					fatAttr(fileInfo.fattrib),
@@ -1445,14 +1478,14 @@ void StartDefTask(void *argument)
 	FRESULT mnt = FR_DISK_ERR;
 	FATFS dsk;
 	FATFS *udsk = &dsk;
-	mnt = f_mount(&dsk, "SD1", 1);
-	if (mnt != FR_OK) Report(true, "Disk 'SD1' mount Error - %d\r\n", mnt);
+	mnt = f_mount(&dsk, diskName, 1);
+	if (mnt != FR_OK) Report(true, "Disk '%s' mount Error - %d\r\n", diskName, mnt);
 	else {
 		DWORD fre_clust = 0, fre_sect = 0, tot_sect = 0;
-		f_getfree("SD1", &fre_clust, &udsk);
+		f_getfree(diskName, &fre_clust, &udsk);
 		tot_sect = (udsk->n_fatent - 2) * udsk->csize;
 		fre_sect = fre_clust * udsk->csize;
-		Report(true, "Disk 'SD1' mount OK. Space : total %lu KB, free %lu KB.\r\n", tot_sect/2, fre_sect/2);
+		Report(true, "Disk '%s' mount OK. Space : total %lu KB, free %lu KB.\r\n", diskName, tot_sect/2, fre_sect/2);
 		list_dir(dirPath);
 		sprintf(tmp, "%s%s", dirPath, sens_file_name);
 		if (!f_unlink(tmp)) { Report(true, "Delete file '%s' OK !\r\n", tmp); osDelay(1000); }
@@ -1469,7 +1502,8 @@ void StartDefTask(void *argument)
 
 	/* Infinite loop */
 
-  	while (1)   {
+  	while (LoopAll)   {
+
   		/**/
   		if (mailQueueHandle) {
   			if (osMessageQueueGet(mailQueueHandle, (void *)&levt, NULL, 100) == osOK) {
@@ -1517,8 +1551,7 @@ void StartDefTask(void *argument)
 #ifdef SET_SD_CARD
   				if (!mnt) {
   					sprintf(tmp, "%s%s", dirPath, sens_file_name);
-  					rt = save_file((const char *)tmp, DefBuf);
-  					if (rt > 0) cnt++;
+  					rt = save_file((const char *)tmp, DefBuf, &cnt);
   					Report(false, "\tWrite to file '%s' +%d bytes (%d)\r\n", tmp, rt, cnt);
   					list_dir(dirPath);
   				}
@@ -1539,17 +1572,56 @@ void StartDefTask(void *argument)
 		/**/
   		osDelay(100);
   		/**/
+
+#ifdef SET_SD_CARD
   		if (flags.sd_list) {
   			flags.sd_list = 0;
-#ifdef SET_SD_CARD
   			if (!mnt) {
-  				list_dir(dirPath);
   				Report(false, "\tList of dir '%s':\r\n", dirPath);
+  				list_dir(dirPath);
   			}
+  		}
+
+  		if (flags.sd_umount) {
+  			flags.sd_umount = 0;
+  			if (!mnt) {
+  				mnt = f_mount(0, diskName, 0);
+  				if (mnt != FR_OK) Report(true, "Umount disk '%s' Error - %d\r\n", diskName, mnt);
+  							 else Report(true, "Umount disk '%s' OK\r\n", diskName);
+  		  		mnt = FR_NOT_READY;
+  			}
+  		}
+
+  		if (flags.sd_mount) {
+  			flags.sd_mount = 0;
+  			if (mnt) {
+  				mnt = f_mount(&dsk, diskName, 1);
+  				if (mnt != FR_OK) Report(true, "Disk '%s' mount Error - %d\r\n", diskName, mnt);
+  							 else Report(true, "Disk '%s' mount OK\r\n");
+  			}
+  		}
 #endif
+  		//
+  		if (flags.restart) {
+  			flags.restart = 0;
+  			Report(true, "Restart all !\r\n");
+  			ssd1306_clear();
+  			osDelay(1000);
+  			NVIC_SystemReset();
   		}
   		//
+  		if (flags.stop) {
+  			flags.stop = 0;
+  			int dl = sprintf(toScreen, "Stop All");
+  			Report(true, "%s!\r\n", toScreen);
+  			osDelay(1000);
+  			ssd1306_text_xy(toScreen, ssd1306_calcx(dl), 5);
+  			LoopAll = false;
+  		}
   	}
+
+  	LOOP_FOREVER();
+
   /* USER CODE END 5 */ 
 }
 
@@ -1583,7 +1655,7 @@ void StartSensTask(void *argument)
 
 	bh1750_on_mode();
 
-	while (1) {
+	while (LoopAll) {
 		if (check_tmr(wait_sensor)) {
 			wait_sensor = get_tmr(wait_sensor_def);
 			//--------------------  BH1750  ---------------------------------
@@ -1625,6 +1697,9 @@ void StartSensTask(void *argument)
 		//
 		osDelay(100);
 	}
+
+	LOOP_FOREVER();
+
   /* USER CODE END StartSensTask */
 }
 
@@ -1656,7 +1731,7 @@ void StartAtTask(void *argument)
 	/**/
 
 	/* Infinite loop */
-	while (1) {
+	while (LoopAll) {
 
 		if (getQ(msgAT, &q_at) >= 0) {
 			if (strstr(msgAT, "NORMAL POWER DOWN")) {
@@ -1759,6 +1834,8 @@ void StartAtTask(void *argument)
 		osDelay(10);
 	}
 
+	LOOP_FOREVER();
+
   /* USER CODE END StartAtTask */
 }
 
@@ -1802,10 +1879,10 @@ void StartGpsTask(void *argument)
 
   /* Infinite loop */
 
-	while (1) {
+	while (LoopAll) {
 
 		if (getQ(msgNMEA, &q_gps) >= 0) {
-			Report(true, msgNMEA);
+			if (flags.gps_log_show) Report(true, msgNMEA);
 			if (!parse_gps(msgNMEA, &one)) {
 				if (flags.gps_log_show) {
 					obj = jfes_create_object_value(&jconf);
@@ -1884,6 +1961,8 @@ void StartGpsTask(void *argument)
 		osDelay(100);
 
 	}
+
+	LOOP_FOREVER();
 
   /* USER CODE END StartGpsTask */
 }
