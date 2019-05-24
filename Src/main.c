@@ -53,7 +53,8 @@
 //const char *ver = "ver 1.7rc3";//21.05.2019 - minor changes : write log file 'sensors.txt' to SD Card <- step 3.
 //const char *ver = "ver 1.7rc4";//22.05.2019 - minor changes : in support SD card, data from sensors in json format <- step 4.
 //const char *ver = "ver 1.7rc5";//22.05.2019 - minor changes : support next command : 'DATE:','MOUNT:','UMNT:','LIST:','RESTART:','STOP','GPS:','GSM:','I2C:' <- step 5.
-const char *ver = "ver 1.8rc1";//23.05.2019 - major changes : set UART4_TX from PA0 to PC10 (PA0 now for command 'STOP')
+//const char *ver = "ver 1.8rc1";//23.05.2019 - major changes : set UART4_TX from PA0 to PC10 (PA0 now for command 'STOP')
+const char *ver = "ver 1.9rc1";//24.05.2019 - major changes : add RTC (rtcclk = 320KHz)
 
 
 /*
@@ -80,6 +81,8 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
+
+RTC_HandleTypeDef hrtc;
 
 SPI_HandleTypeDef hspi1;
 
@@ -119,9 +122,10 @@ SPI_HandleTypeDef *portSPI;//hspi1;
 static const char *_extDate = "DATE:";
 bool evt_clear = false;
 static bool setDate = false;
-static bool epochSet = false;
-volatile static uint32_t extDate = 0;
-
+#ifndef SET_RTC_TMR
+	static bool epochSet = false;
+	volatile static uint32_t extDate = 0;
+#endif
 static char DefBuf[MAX_UART_BUF];
 
 static char RxBuf[MAX_UART_BUF];
@@ -192,6 +196,7 @@ static void MX_UART4_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_SPI1_Init(void);
+static void MX_RTC_Init(void);
 void StartDefTask(void *argument); // for v2
 void StartSensTask(void *argument); // for v2
 void StartAtTask(void *argument); // for v2
@@ -250,6 +255,7 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USART2_UART_Init();
   MX_SPI1_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
 
 #ifdef GSM_KEY_Pin
@@ -391,6 +397,7 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
 
   /** Configure the main internal regulator output voltage 
   */
@@ -420,6 +427,12 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+  PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_HSE_DIV25;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();
   }
@@ -456,6 +469,68 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief RTC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_RTC_Init(void)
+{
+
+  /* USER CODE BEGIN RTC_Init 0 */
+
+  /* USER CODE END RTC_Init 0 */
+
+  RTC_TimeTypeDef sTime = {0};
+  RTC_DateTypeDef sDate = {0};
+
+  /* USER CODE BEGIN RTC_Init 1 */
+
+  /* USER CODE END RTC_Init 1 */
+  /** Initialize RTC Only 
+  */
+  hrtc.Instance = RTC;
+  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+  hrtc.Init.AsynchPrediv = 127;
+  hrtc.Init.SynchPrediv = 2499;
+  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
+  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
+  if (HAL_RTC_Init(&hrtc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* USER CODE BEGIN Check_RTC_BKUP */
+    
+  /* USER CODE END Check_RTC_BKUP */
+
+  /** Initialize RTC and set the Time and Date 
+  */
+  sTime.Hours = 0;
+  sTime.Minutes = 0;
+  sTime.Seconds = 0;
+  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sDate.WeekDay = RTC_WEEKDAY_MONDAY;
+  sDate.Month = RTC_MONTH_JANUARY;
+  sDate.Date = 1;
+  sDate.Year = 0;
+
+  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN RTC_Init 2 */
+
+  /* USER CODE END RTC_Init 2 */
 
 }
 
@@ -511,8 +586,9 @@ static void MX_TIM2_Init(void)
 
 	secCounter     = 0; // 1 sec counter (uint32_t)
 	HalfSecCounter = 0; // 250 ms counter (uint64_t)
+#ifndef SET_RTC_TMR
 	extDate        = 0; // 1 sec counter (uint32_t)
-
+#endif
   /* USER CODE END TIM2_Init 0 */
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
@@ -783,14 +859,15 @@ uint32_t get_secCounter()
 	return secCounter;
 }
 //-----------------------------------------------------------------------------
-uint32_t get_extDate()
-{
-	return extDate;
-}
-//-----------------------------------------------------------------------------
 void inc_secCounter()
 {
 	secCounter++;
+}
+//-----------------------------------------------------------------------------
+#ifndef SET_RTC_TMR
+uint32_t get_extDate()
+{
+	return extDate;
 }
 //-----------------------------------------------------------------------------
 void inc_extDate()
@@ -802,6 +879,7 @@ void set_extDate(uint32_t ep)
 {
 	extDate = ep;
 }
+#endif
 //-----------------------------------------------------------------------------
 uint64_t get_hsCounter()
 {
@@ -876,26 +954,42 @@ int ret = 0;
 		s %= 60;
 		ret = sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, s);
 	} else {//in RTC valid date (epoch time)
-		struct tm ts;
+/*		struct tm ts;
 		time_t ep = (time_t)sec;
 		if (gmtime_r(&ep, &ts) != NULL) {
-			/*
-int tm_sec – секунды (отсчет с 0);
-int tm_min – минуты (отсчет с 0);
-int tm_hour - часы (отсчет с 0);
-int tm_mday - день месяца (отсчет с 1);
-int tm_mon - месяц (отсчет с 0);
-int tm_year – год (за начала отсчета принят 1900 год);
-int tm_wday - день недели (воскресенье - 0);
-int tm_yday - день в году (отсчет с 0);
-			 */
+			//
+//int tm_sec – секунды (отсчет с 0);
+//int tm_min – минуты (отсчет с 0);
+//int tm_hour - часы (отсчет с 0);
+//int tm_mday - день месяца (отсчет с 1);
+//int tm_mon - месяц (отсчет с 0);
+//int tm_year – год (за начала отсчета принят 1900 год);
+//int tm_wday - день недели (воскресенье - 0);
+//int tm_yday - день в году (отсчет с 0);
+			 //
 			if (log)
 				ret = sprintf(stx, "%02d.%02d.%04d %02d:%02d:%02d",
 							ts.tm_mday, ts.tm_mon + 1, ts.tm_year + 1900, ts.tm_hour, ts.tm_min, ts.tm_sec);
 			else
 				ret = sprintf(stx, "%02d.%02d %02d:%02d:%02d",
 							ts.tm_mday, ts.tm_mon + 1, ts.tm_hour, ts.tm_min, ts.tm_sec);
+		}*/
+		RTC_TimeTypeDef sTime;
+		RTC_DateTypeDef sDate;
+		if (HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN)) errLedOn(NULL);
+		else {
+			if (HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN)) errLedOn(NULL);
+			else {
+				if (log) ret = sprintf(stx, "%02u.%02u.%04u %02u:%02u:%02u",
+						sDate.Date, sDate.Month, sDate.Year + 1900,
+						sTime.Hours, sTime.Minutes, sTime.Seconds);
+				else
+					ret = sprintf(stx, "%02u.%02u %02u:%02u:%02u",
+										sDate.Date, sDate.Month,
+										sTime.Hours, sTime.Minutes, sTime.Seconds);
+			}
 		}
+
 	}
 
 	if (log) {
@@ -905,6 +999,62 @@ int tm_yday - день в году (отсчет с 0);
 
     return ret;
 }
+//-----------------------------------------------------------------------------
+#ifdef SET_RTC_TMR
+void set_Date(uint32_t epoch)
+{
+struct tm ts;
+time_t ep = epoch;
+
+	if (!gmtime_r(&ep, &ts)) {
+		errLedOn(NULL);
+		return;
+	}
+
+	RTC_TimeTypeDef sTime;
+	RTC_DateTypeDef sDate;
+	sDate.WeekDay = ts.tm_wday;
+	sDate.Month   = ts.tm_mon + 1;
+	sDate.Date    = ts.tm_mday;
+	sDate.Year    = ts.tm_year;
+	sTime.Hours   = ts.tm_hour;
+	sTime.Minutes = ts.tm_min;
+	sTime.Seconds = ts.tm_sec;
+
+	if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN)) errLedOn(NULL);
+	else {
+		if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN)) errLedOn(NULL);
+		else setDate = true;
+	}
+}
+#endif
+//----------------------------------------------------------------------------------------
+#ifdef SET_RTC_TMR
+uint32_t getSecRTC(RTC_HandleTypeDef *hrtc)
+{
+time_t ep = 0;
+RTC_DateTypeDef sDate;
+
+	if (HAL_RTC_GetDate(hrtc, &sDate, RTC_FORMAT_BIN)) errLedOn(NULL);
+	else {
+		RTC_TimeTypeDef sTime;
+		if (HAL_RTC_GetTime(hrtc, &sTime, RTC_FORMAT_BIN)) errLedOn(NULL);
+		else {
+			struct tm ts;
+			ts.tm_sec = sTime.Seconds;
+			ts.tm_min = sTime.Minutes;
+			ts.tm_hour = sTime.Hours;
+			ts.tm_mday = sDate.Date;
+			ts.tm_mon = sDate.Month - 1;
+			ts.tm_year = sDate.Year;
+			ts.tm_wday = sDate.WeekDay;
+			ep = mktime(&ts);
+		}
+	}
+
+	return ep;
+}
+#endif
 //----------------------------------------------------------------------------------------
 void Report(bool addTime, const char *fmt, ...)
 {
@@ -917,12 +1067,7 @@ size_t len = MAX_UART_BUF;
 		int dl = 0, sz;
 		va_list args;
 
-		if (addTime) {
-			uint32_t ep;
-			if (!setDate) ep = get_secCounter();
-					 else ep = extDate;
-			dl = sec_to_string(ep, buff, true);
-		}
+		if (addTime) dl = sec_to_string(get_secCounter(), buff, true);
 
 		sz = dl;
 		va_start(args, fmt);
@@ -1058,8 +1203,13 @@ void LogData()
 			if (*uk != '?') {
 				if (strlen(uk) < 10) setDate = false;
 				else {
+#ifdef SET_RTC_TMR
+					set_Date((uint32_t)atoi(uk));
+#else
 					set_extDate((uint32_t)atoi(uk));
-					epochSet = setDate = true;
+					epochSet = true;
+					setDate = true;
+#endif
 				}
 			} else setDate = true;
 			evt_clear = true;
@@ -1505,6 +1655,7 @@ void StartDefTask(void *argument)
 	};
 	jfes_value_t *obj  = NULL;
 	jfes_size_t buf_size = MAX_UART_BUF - 1;
+	uint32_t ep = 0;
 
 	/* Infinite loop */
 
@@ -1521,8 +1672,15 @@ void StartDefTask(void *argument)
   					jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, "SENSOR", 0), "MsgType", 0);
   					jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, dev_name, 0), "DevName", 0);
   					jfes_set_object_property(&jconf, obj, jfes_create_integer_value(&jconf, get_secCounter()), "DevTime", 0);
-  					if (setDate) jfes_set_object_property(&jconf, obj, jfes_create_integer_value(&jconf, extDate), "EpochTime", 0);
-  					jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)levt.pres), "Press", 0);
+					if (setDate) {
+#ifdef SET_RTC_TMR
+						ep = getSecRTC(&hrtc);
+#else
+						ep = get_extDate();
+#endif
+						jfes_set_object_property(&jconf, obj, jfes_create_integer_value(&jconf, ep), "EpochTime", 0);
+					}
+ 					jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)levt.pres), "Press", 0);
   					jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)levt.temp), "Temp", 0);
   					jfes_set_object_property(&jconf, obj, jfes_create_double_value(&jconf, (double)levt.lux), "Lux", 0);
   				} else obj = NULL;
@@ -1882,6 +2040,7 @@ void StartGpsTask(void *argument)
 	jfes_value_t *obj2 = NULL;
 	jfes_size_t stx_size  = MAX_UART_BUF - 1;
 	jfes_size_t stx_size2 = stx_size;
+	uint32_t ep = 0;
 
   /* Infinite loop */
 
@@ -1896,7 +2055,14 @@ void StartGpsTask(void *argument)
 						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, "$GNRMC", 0), "MsgType", 0);
 						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, dev_name, 0), "DevName", 0);
 						jfes_set_object_property(&jconf, obj, jfes_create_integer_value(&jconf, get_secCounter()), "DevTime", 0);
-						if (setDate) jfes_set_object_property(&jconf, obj, jfes_create_integer_value(&jconf, extDate), "EpochTime", 0);
+						if (setDate) {
+#ifdef SET_RTC_TMR
+						ep = getSecRTC(&hrtc);
+#else
+						ep = get_extDate();
+#endif
+							jfes_set_object_property(&jconf, obj, jfes_create_integer_value(&jconf, ep), "EpochTime", 0);
+						}
 						dl = sprintf(msgNMEA, "%02u.%02u.%02u %02u:%02u:%02u.%03u",
 												one.day, one.mon, one.year, one.hour, one.min, one.sec, one.ms);
 						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, msgNMEA, dl), "UTC", 0);
@@ -1931,7 +2097,14 @@ void StartGpsTask(void *argument)
 					jfes_set_object_property(&jconf2, obj2, jfes_create_string_value(&jconf2, "+CGNSINF", 0), "MsgType", 0);
 					jfes_set_object_property(&jconf2, obj2, jfes_create_string_value(&jconf2, dev_name, 0), "DevName", 0);
 					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, get_secCounter()), "DevTime", 0);
-					if (setDate) jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, extDate), "EpochTime", 0);
+					if (setDate) {
+#ifdef SET_RTC_TMR
+						ep = getSecRTC(&hrtc);
+#else
+						ep = get_extDate();
+#endif
+						jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, ep), "EpochTime", 0);
+					}
 					dl = sprintf(msgNMEA, "%02u.%02u.%04u %02u:%02u:%02u.%03u",
 										inf.utc.day, inf.utc.mon, inf.utc.year, inf.utc.hour, inf.utc.min, inf.utc.sec, inf.utc.ms);
 					jfes_set_object_property(&jconf2, obj2, jfes_create_string_value(&jconf2, msgNMEA, dl), "UTC", 0);
@@ -1999,18 +2172,23 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			  evt_clear = false;
 			  if (!i2cError) ssd1306_clear_line(1);
 		  }
+		  char scrBuf[32];
+#ifndef SET_RTC_TMR
 		  if (epochSet) inc_extDate();
 		  uint32_t ep;
-		  if (setDate)  ep = get_extDate();
-		   	  	   else ep = get_secCounter();
-		  char scrBuf[32];
+		  if (setDate) ep = get_extDate();
+		   	  	  else ep = get_secCounter();
 		  if (!i2cError) ssd1306_text_xy(scrBuf, ssd1306_calcx(sec_to_string(ep, scrBuf, false)), 1);
+#else
+		  if (!i2cError) ssd1306_text_xy(scrBuf, ssd1306_calcx(sec_to_string(get_secCounter(), scrBuf, false)), 1);
+#endif
 		  if (OnOffEn) {
 			  if (!HAL_GPIO_ReadPin(GSM_STAT_GPIO_Port, GSM_STAT_Pin))
 				  HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//gsm is on
 			  else
 				  HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//gsm is off
 		  }
+		  //------------------------------------------------------------------------------------------
 		  if (HAL_GPIO_ReadPin(USER_IN_GPIO_Port, USER_IN_Pin) == GPIO_PIN_SET) {//user key is pressed
 			  if (!flags.stop) {
 #ifdef SET_SD_CARD
@@ -2019,7 +2197,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 				  flags.stop = 1;
 			  }
 		  }
-		  //if (!i2cError) ssd1306_text_xy(scrBuf, ssd1306_calcx(sprintf(scrBuf, "PA0 = %u", ps)), 5);
+		  //------------------------------------------------------------------------------------------
 	  }
 	  inc_hsCounter();
 

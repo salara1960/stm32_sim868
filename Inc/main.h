@@ -49,6 +49,7 @@ extern "C" {
 /* USER CODE BEGIN ET */
 
 #define SET_SD_CARD
+#define SET_RTC_TMR
 
 #define MAX_QMSG 8
 
