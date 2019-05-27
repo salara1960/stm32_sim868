@@ -25,11 +25,13 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "ssd1306.h"
 #include "bmp280.h"
 #include "bh1750.h"
 #include "sd.h"
 
+#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+	#include "ssd1306.h"
+#endif
 //const char *ver = "ver 1.0rc1";//04.05.2019 - first working release
 //const char *ver = "ver 1.1rc1";//05.05.2019 - add virtual com port (usb device CDC)
 //const char *ver = "ver 1.1rc2";//06.05.2019 - remove USART3, now log_defice - virtual serial port on usb CDC
@@ -54,7 +56,8 @@
 //const char *ver = "ver 1.7rc4";//22.05.2019 - minor changes : in support SD card, data from sensors in json format <- step 4.
 //const char *ver = "ver 1.7rc5";//22.05.2019 - minor changes : support next command : 'DATE:','MOUNT:','UMNT:','LIST:','RESTART:','STOP','GPS:','GSM:','I2C:' <- step 5.
 //const char *ver = "ver 1.8rc1";//23.05.2019 - major changes : set UART4_TX from PA0 to PC10 (PA0 now for command 'STOP')
-const char *ver = "ver 1.9rc1";//24.05.2019 - major changes : add RTC (rtcclk = 320KHz)
+//const char *ver = "ver 1.9rc1";//24.05.2019 - major changes : add RTC (rtcclk = 320KHz)
+const char *ver = "ver 2.0rc1";//25.05.2019 - major changes : add spi OLED SSD1306 (SPI3), remove i2c OLED SSD1306 (i2c1)
 
 
 /*
@@ -85,6 +88,8 @@ I2C_HandleTypeDef hi2c1;
 RTC_HandleTypeDef hrtc;
 
 SPI_HandleTypeDef hspi1;
+SPI_HandleTypeDef hspi3;
+DMA_HandleTypeDef hdma_spi3_tx;
 
 TIM_HandleTypeDef htim2;
 
@@ -112,13 +117,17 @@ const uint32_t min_wait_ms = 150;
 const uint32_t max_wait_ms = 1000;
 
 I2C_HandleTypeDef *portBMP;
-I2C_HandleTypeDef *portSSD;
+#ifdef SET_OLED_I2C
+	I2C_HandleTypeDef *portSSD;
+#endif
 I2C_HandleTypeDef *portBH;
 UART_HandleTypeDef *portAT;//huart4;
 UART_HandleTypeDef *portGPS;//huart2;
 UART_HandleTypeDef *portLOG;//huart3;
 SPI_HandleTypeDef *portSPI;//hspi1;
-
+#ifdef SET_OLED_SPI
+	SPI_HandleTypeDef *portOLED;//hspi3;
+#endif
 static const char *_extDate = "DATE:";
 bool evt_clear = false;
 static bool setDate = false;
@@ -197,6 +206,7 @@ static void MX_USART3_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_RTC_Init(void);
+static void MX_SPI3_Init(void);
 void StartDefTask(void *argument); // for v2
 void StartSensTask(void *argument); // for v2
 void StartAtTask(void *argument); // for v2
@@ -256,6 +266,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_SPI1_Init();
   MX_RTC_Init();
+  MX_SPI3_Init();
   /* USER CODE BEGIN 2 */
 
 #ifdef GSM_KEY_Pin
@@ -264,33 +275,44 @@ int main(void)
 
   ClearRxBuf();
 
-  portBMP = &hi2c1;
-  portSSD = &hi2c1;
-  portBH  = &hi2c1;
+  portBMP = &hi2c1;//BMP280
+#ifdef SET_OLED_I2C
+  portSSD = &hi2c1;//I2C - OLED ssd1306
+#endif
+  portBH  = &hi2c1;//BH1750
   portAT  = &huart4;//AT
   portGPS = &huart2;//GPS
   portLOG = &huart3;//LOG
-  portSPI = &hspi1;//SPI
+  portSPI = &hspi1;//SPI1 - SD Card
+#ifdef SET_OLED_SPI
+  portOLED = &hspi3;//SPI3 - OLED SSD1306
+#endif
 
 #ifdef GSM_KEY_Pin
   HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);
 #endif
   HAL_GPIO_WritePin(GPIO_PortD, LED_GREEN_Pin | LED_BLUE_Pin | LED_RED_Pin | LED_ORANGE_Pin, GPIO_PIN_RESET);
 
-  ssd1306_on(true);//screen ON
-    if (!i2cError) {
-  	  ssd1306_init();//screen INIT
+#ifdef SET_OLED_I2C
+  i2c_ssd1306_on(true);//screen ON
+  if (!i2cError) {
+	  i2c_ssd1306_init();//screen INIT
   	  if (!i2cError) {
-  		  ssd1306_pattern();//set any params for screen
-  		  if (!i2cError) {
-  			  //ssd1306_invert();//set inverse color mode
-  			  //if (!i2cError)
-  				  ssd1306_clear();//clear screen
-  		  }
-        }
-    }
+  		  i2c_ssd1306_pattern();//set any params for screen
+  		  if (!i2cError) i2c_ssd1306_clear();//clear screen
+  	  }
+  }
+#endif
 
     bh1750_off();
+
+#ifdef SET_OLED_SPI
+    spi_ssd1306_Reset();
+    spi_ssd1306_on(true);//screen ON
+    spi_ssd1306_init();//screen INIT
+    spi_ssd1306_pattern();//set any params for screen
+    spi_ssd1306_clear();//clear screen
+#endif
 
     // start timer2 + interrupt
     HAL_TIM_Base_Start(&htim2);
@@ -575,6 +597,44 @@ static void MX_SPI1_Init(void)
 }
 
 /**
+  * @brief SPI3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI3_Init(void)
+{
+
+  /* USER CODE BEGIN SPI3_Init 0 */
+
+  /* USER CODE END SPI3_Init 0 */
+
+  /* USER CODE BEGIN SPI3_Init 1 */
+
+  /* USER CODE END SPI3_Init 1 */
+  /* SPI3 parameter configuration*/
+  hspi3.Instance = SPI3;
+  hspi3.Init.Mode = SPI_MODE_MASTER;
+  hspi3.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi3.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi3.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi3.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi3.Init.NSS = SPI_NSS_SOFT;
+  hspi3.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi3.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi3.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi3.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi3.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI3_Init 2 */
+
+  /* USER CODE END SPI3_Init 2 */
+
+}
+
+/**
   * @brief TIM2 Initialization Function
   * @param None
   * @retval None
@@ -748,6 +808,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 1, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
 
 }
 
@@ -774,7 +837,10 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOD, LED_GREEN_Pin|LED_ORANGE_Pin|LED_RED_Pin|LED_BLUE_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(OLED_RST_GPIO_Port, OLED_RST_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, OLED_CS_Pin|SD_CS_Pin|OLED_DC_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : USER_IN_Pin */
   GPIO_InitStruct.Pin = USER_IN_Pin;
@@ -802,17 +868,34 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : SD_CS_Pin */
-  GPIO_InitStruct.Pin = SD_CS_Pin;
+  /*Configure GPIO pin : OLED_RST_Pin */
+  GPIO_InitStruct.Pin = OLED_RST_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(SD_CS_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(OLED_RST_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : OLED_CS_Pin SD_CS_Pin OLED_DC_Pin */
+  GPIO_InitStruct.Pin = OLED_CS_Pin|SD_CS_Pin|OLED_DC_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 }
 
 /* USER CODE BEGIN 4 */
+//-----------------------------------------------------------------------------------------
+#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+uint8_t ssd1306_calcx(int len)
+{
+uint8_t ret = 0;
 
+    if ( (len > 0) && (len <= 16) ) ret = ((16 - len) >> 1) + 1;
+
+    return ret;
+}
+#endif
 //------------------------------------------------------------------------------------------
 uint8_t hextobin(char st, char ml)
 {
@@ -954,7 +1037,8 @@ int ret = 0;
 		s %= 60;
 		ret = sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, s);
 	} else {//in RTC valid date (epoch time)
-/*		struct tm ts;
+/*
+ 		struct tm ts;
 		time_t ep = (time_t)sec;
 		if (gmtime_r(&ep, &ts) != NULL) {
 			//
@@ -973,7 +1057,8 @@ int ret = 0;
 			else
 				ret = sprintf(stx, "%02d.%02d %02d:%02d:%02d",
 							ts.tm_mday, ts.tm_mon + 1, ts.tm_hour, ts.tm_min, ts.tm_sec);
-		}*/
+		}
+*/
 		RTC_TimeTypeDef sTime;
 		RTC_DateTypeDef sDate;
 		if (HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN)) errLedOn(NULL);
@@ -1074,9 +1159,9 @@ size_t len = MAX_UART_BUF;
 		sz += vsnprintf(buff + dl, len - dl, fmt, args);
 		//
 		if (osSemaphoreAcquire(binSemHandle, 2000) == osOK) {
-			HAL_UART_Transmit_DMA(&huart3, (uint8_t *)buff, sz);
-			while (HAL_UART_GetState(&huart3) != HAL_UART_STATE_READY) {
-				if (HAL_UART_GetState(&huart3) == HAL_UART_STATE_BUSY_RX) break;
+			HAL_UART_Transmit_DMA(portLOG, (uint8_t *)buff, sz);
+			while (HAL_UART_GetState(portLOG) != HAL_UART_STATE_READY) {
+				if (HAL_UART_GetState(portLOG) == HAL_UART_STATE_BUSY_RX) break;
 				osDelay(1);
 			}
 			osSemaphoreRelease(binSemHandle);
@@ -1149,7 +1234,15 @@ void getNMEA()
 					int8_t sta = putQ(buff, &q_gps);
 					if (sta < 0) free(buff);//error !
 							else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);//add to q_gps OK
-					ssd1306_text_xy(GpsRxBuf, ssd1306_calcx(sprintf(GpsRxBuf, "RMC:%lu %d", ++rmcCounter, sta)), 3);
+#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+					int l = sprintf(GpsRxBuf, "RMC:%lu %d", ++rmcCounter, sta);
+	#ifdef SET_OLED_I2C
+					i2c_ssd1306_text_xy(GpsRxBuf, ssd1306_calcx(l), 3);
+	#endif
+	#ifdef SET_OLED_SPI
+					spi_ssd1306_text_xy(GpsRxBuf, ssd1306_calcx(l), 3);
+	#endif
+#endif
 				}
 			} else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
 		}
@@ -1182,9 +1275,15 @@ void getAT()
 					}
 				}
 			}
-
-			ssd1306_text_xy(AtRxBuf, ssd1306_calcx(sprintf(AtRxBuf, "MSG: %lu", ++atCounter)), 4);
-
+#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+			int l = sprintf(AtRxBuf, "MSG: %lu", ++atCounter);
+	#ifdef SET_OLED_I2C
+			i2c_ssd1306_text_xy(AtRxBuf, ssd1306_calcx(l), 4);
+	#endif
+	#ifdef SET_OLED_SPI
+			spi_ssd1306_text_xy(AtRxBuf, ssd1306_calcx(l), 4);
+	#endif
+#endif
 			at_rx_uk = adone = 0;
 			memset(AtRxBuf, 0, MAX_UART_BUF);
 		}
@@ -1242,7 +1341,12 @@ void LogData()
 #endif
 								if (LoopAll) flags.restart = 1;
 								else {
-									ssd1306_clear();
+#ifdef SET_OLED_I2C
+									i2c_ssd1306_clear();
+#endif
+#ifdef SET_OLED_SPI
+									spi_ssd1306_clear();
+#endif
 									NVIC_SystemReset();
 								}
 							} else  if (strstr(RxBuf, "STOP:")) {
@@ -1273,10 +1377,23 @@ void LogData()
 #endif
 
 			if (priz) {
-				ssd1306_clear_line(5);
+#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+	#ifdef SET_OLED_I2C
+				i2c_ssd1306_clear_line(5);
+	#endif
+	#ifdef SET_OLED_SPI
+				spi_ssd1306_clear_line(5);
+	#endif
 				char *uke = strchr(RxBuf, '\r'); if (uke) *uke = '\0';
 				if (strlen(RxBuf) > 16) RxBuf[16] = 0;
-				ssd1306_text_xy(RxBuf, ssd1306_calcx(strlen(RxBuf)), 5);
+				int l = strlen(RxBuf);
+	#ifdef SET_OLED_I2C
+				i2c_ssd1306_text_xy(RxBuf, ssd1306_calcx(l), 5);
+	#endif
+	#ifdef SET_OLED_SPI
+				spi_ssd1306_text_xy(RxBuf, ssd1306_calcx(l), 5);
+	#endif
+#endif
 			}
 		}
 		ClearRxBuf();
@@ -1705,10 +1822,15 @@ void StartDefTask(void *argument)
   				  		}
   				}
   				//
-  				if (!i2cError) {
-  					sprintf(toScreen+strlen(toScreen), "\nLux  : %u.%02u", evt.lux.cel, evt.lux.dro);
-  					ssd1306_text_xy(toScreen, 1, row);//send string to screen
-  				}
+#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+  				sprintf(toScreen+strlen(toScreen), "\nLux  : %u.%02u", evt.lux.cel, evt.lux.dro);
+	#ifdef SET_OLED_I2C
+  				if (!i2cError) i2c_ssd1306_text_xy(toScreen, 1, row);//send string to screen
+	#endif
+	#ifdef SET_OLED_SPI
+  				spi_ssd1306_text_xy(toScreen, 1, row);//send string to screen
+	#endif
+#endif
   				//
   				if (show) Report(true, DefBuf);
 
@@ -1769,7 +1891,12 @@ void StartDefTask(void *argument)
   		if (flags.restart) {
   			flags.restart = 0;
   			Report(true, "Restart all !\r\n");
-  			ssd1306_clear();
+#ifdef SET_OLED_I2C
+  			i2c_ssd1306_clear();
+#endif
+#ifdef SET_OLED_SPI
+  			spi_ssd1306_clear();
+#endif
   			osDelay(1000);
   			NVIC_SystemReset();
   		}
@@ -1779,7 +1906,12 @@ void StartDefTask(void *argument)
   			int dl = sprintf(toScreen, "Stop All");
   			Report(true, "%s!\r\n", toScreen);
   			osDelay(1000);
-  			ssd1306_text_xy(toScreen, ssd1306_calcx(dl), 5);
+#ifdef SET_OLED_I2C
+  			i2c_ssd1306_text_xy(toScreen, ssd1306_calcx(dl), 5);
+#endif
+#ifdef SET_OLED_SPI
+  			spi_ssd1306_text_xy(toScreen, ssd1306_calcx(dl), 5);
+#endif
   			LoopAll = false;
   		}
   	}
@@ -1934,13 +2066,20 @@ void StartAtTask(void *argument)
 				new_cmds = get_hstmr(6);//6 - 1.5 sec //8//3 sec
 			}
 			Report(false, msgAT);
+#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 			/**/
 			//if (fmem != xPortGetFreeHeapSize()) {
 				fmem = xPortGetFreeHeapSize();
-				ssd1306_text_xy(toScr, ssd1306_calcx(sprintf(toScr, "f:%u on:%u.%u", fmem, onGSM, onGNS)), 2);
+				int l = sprintf(toScr, "f:%u on:%u.%u", fmem, onGSM, onGNS);
+	#ifdef SET_OLED_I2C
+				i2c_ssd1306_text_xy(toScr, ssd1306_calcx(l), 2);
+	#endif
+	#ifdef SET_OLED_SPI
+				spi_ssd1306_text_xy(toScr, ssd1306_calcx(l), 2);
+	#endif
 			//}
 			/**/
-
+#endif
 		}
 
 		if (cmdsInd >= 0) {
@@ -1968,9 +2107,9 @@ void StartAtTask(void *argument)
 
 		if (cmdsReady && cmdsDone) {
 			cmdsReady = false;
-			HAL_UART_Transmit_DMA(&huart4, (uint8_t *)buff, strlen(buff));
-			while (HAL_UART_GetState(&huart4) != HAL_UART_STATE_READY) {
-				if (HAL_UART_GetState(&huart4) == HAL_UART_STATE_BUSY_RX) break;
+			HAL_UART_Transmit_DMA(portAT, (uint8_t *)buff, strlen(buff));
+			while (HAL_UART_GetState(portAT) != HAL_UART_STATE_READY) {
+				if (HAL_UART_GetState(portAT) == HAL_UART_STATE_BUSY_RX) break;
 				osDelay(1);
 			}
 			cmdsDone = false;
@@ -2170,17 +2309,40 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		  HAL_GPIO_TogglePin(GPIOD, LED_GREEN_Pin);
 		  if (evt_clear) {
 			  evt_clear = false;
-			  if (!i2cError) ssd1306_clear_line(1);
+#ifdef SET_OLED_I2C
+			  if (!i2cError) i2c_ssd1306_clear_line(1);
+#endif
+#ifdef SET_OLED_SPI
+			  spi_ssd1306_clear_line(1);
+#endif
+
 		  }
 		  char scrBuf[32];
+		  int l;
 #ifndef SET_RTC_TMR
 		  if (epochSet) inc_extDate();
 		  uint32_t ep;
 		  if (setDate) ep = get_extDate();
 		   	  	  else ep = get_secCounter();
-		  if (!i2cError) ssd1306_text_xy(scrBuf, ssd1306_calcx(sec_to_string(ep, scrBuf, false)), 1);
+	#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+		  l = sec_to_string(ep, scrBuf, false);
+		#ifdef SET_OLED_I2C
+		  if (!i2cError) i2c_ssd1306_text_xy(scrBuf, ssd1306_calcx(l), 1);
+		#endif
+		#ifdef SET_OLED_SPI
+		  spi_ssd1306_text_xy(scrBuf, ssd1306_calcx(l), 1);
+		#endif
+	#endif
 #else
-		  if (!i2cError) ssd1306_text_xy(scrBuf, ssd1306_calcx(sec_to_string(get_secCounter(), scrBuf, false)), 1);
+	#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+		  l = sec_to_string(get_secCounter(), scrBuf, false);
+		#ifdef SET_OLED_I2C
+		  if (!i2cError) i2c_ssd1306_text_xy(scrBuf, ssd1306_calcx(l), 1);
+		#endif
+		#ifdef SET_OLED_SPI
+		  spi_ssd1306_text_xy(scrBuf, ssd1306_calcx(l), 1);
+		#endif
+	#endif
 #endif
 		  if (OnOffEn) {
 			  if (!HAL_GPIO_ReadPin(GSM_STAT_GPIO_Port, GSM_STAT_Pin))
@@ -2197,6 +2359,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 				  flags.stop = 1;
 			  }
 		  }
+		  //------------------------------------------------------------------------------------------
+
 		  //------------------------------------------------------------------------------------------
 	  }
 	  inc_hsCounter();

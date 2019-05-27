@@ -2,11 +2,11 @@
 #define __SSD1306_H__
 
 #include "main.h"
+#include "font.h"
+
+#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 
 //------------------------------------------------------------------------
-
-
-#define OLED_I2C_ADDRESS                0x3C << 1
 
 // Control byte
 #define OLED_CONTROL_BYTE_CMD_SINGLE    0x80
@@ -46,18 +46,38 @@
 
 //------------------------------------------------------------------------
 
-void ssd1306_on(bool flag);
-void ssd1306_init();
-void ssd1306_invert();
-void ssd1306_clear();
-void ssd1306_pattern();
-void ssd1306_contrast(uint8_t value);
-uint8_t ssd1306_calcx(int len);
-void ssd1306_clear_line(uint8_t cy);
-void ssd1306_text_xy(const char *stroka, uint8_t cx, uint8_t cy);
-void ssd1306_text(const char *stroka);
+#ifdef SET_OLED_I2C
+	#define OLED_I2C_ADDRESS                0x3C << 1
+
+	void i2c_ssd1306_on(bool flag);
+	void i2c_ssd1306_init();
+	void i2c_ssd1306_invert();
+	void i2c_ssd1306_clear();
+	void i2c_ssd1306_pattern();
+	void i2c_ssd1306_contrast(uint8_t value);
+	void i2c_ssd1306_clear_line(uint8_t cy);
+	void i2c_ssd1306_text_xy(const char *stroka, uint8_t cx, uint8_t cy);
+	void i2c_ssd1306_text(const char *stroka);
+#endif
+
+#ifdef SET_OLED_SPI
+	void spi_ssd1306_Reset();
+	void spi_ssd1306_WriteCmds(uint8_t *cmds, size_t sz);
+	void spi_ssd1306_WriteData(const char *buf, size_t sz, bool with);
+	void spi_ssd1306_on(bool flag);
+	void spi_ssd1306_init();
+	void spi_ssd1306_invert();
+	void spi_ssd1306_clear();
+	void spi_ssd1306_pattern();
+	void spi_ssd1306_contrast(uint8_t value);
+	void spi_ssd1306_clear_line(uint8_t cy);
+	void spi_ssd1306_text_xy(const char *stroka, uint8_t cx, uint8_t cy);
+	void spi_ssd1306_text(const char *stroka);
+#endif
 
 //------------------------------------------------------------------------
+
+#endif
 
 #endif /* __SSD1306_H__ */
 

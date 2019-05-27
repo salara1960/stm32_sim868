@@ -50,6 +50,8 @@ extern "C" {
 
 #define SET_SD_CARD
 #define SET_RTC_TMR
+//#define SET_OLED_I2C
+#define SET_OLED_SPI
 
 #define MAX_QMSG 8
 
@@ -186,11 +188,15 @@ const uint32_t min_wait_ms;
 const uint32_t max_wait_ms;
 
 I2C_HandleTypeDef *portBMP;
-I2C_HandleTypeDef *portSSD;
+#ifdef SET_OLED_I2C
+	I2C_HandleTypeDef *portSSD;
+#endif
 I2C_HandleTypeDef *portBH;
-
 UART_HandleTypeDef *portLOG;
 SPI_HandleTypeDef *portSPI;
+#ifdef SET_OLED_SPI
+	SPI_HandleTypeDef *portOLED;
+#endif
 
 /* USER CODE END EC */
 
@@ -243,8 +249,18 @@ void Leds(bool act, uint16_t Pin);
 #define LED_RED_GPIO_Port GPIOD
 #define LED_BLUE_Pin GPIO_PIN_15
 #define LED_BLUE_GPIO_Port GPIOD
+#define OLED_RST_Pin GPIO_PIN_11
+#define OLED_RST_GPIO_Port GPIOC
+#define OLED_MOSI_Pin GPIO_PIN_12
+#define OLED_MOSI_GPIO_Port GPIOC
+#define OLED_SCK_Pin GPIO_PIN_3
+#define OLED_SCK_GPIO_Port GPIOB
+#define OLED_CS_Pin GPIO_PIN_4
+#define OLED_CS_GPIO_Port GPIOB
 #define SD_CS_Pin GPIO_PIN_5
 #define SD_CS_GPIO_Port GPIOB
+#define OLED_DC_Pin GPIO_PIN_6
+#define OLED_DC_GPIO_Port GPIOB
 #define SDA1_Pin GPIO_PIN_7
 #define SDA1_GPIO_Port GPIOB
 #define SCL1_Pin GPIO_PIN_8
@@ -256,12 +272,17 @@ void Leds(bool act, uint16_t Pin);
 #define GPIO_PortD GPIOD
 #define LOOP_FOREVER() while(1) {}
 
-//#ifdef SET_SD_CARD
-	#define SS_SD_SELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_RESET)
-	#define SS_SD_DESELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET)
-	#define LD_ON HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_SET); //RED
-	#define LD_OFF HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_RESET); //RED
-//#endif
+
+#define SS_SD_SELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_RESET)
+#define SS_SD_DESELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET)
+#define LD_ON HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_SET); //RED
+#define LD_OFF HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_RESET); //RED
+
+
+#ifdef SET_OLED_SPI
+#define CS_OLED_SELECT() HAL_GPIO_WritePin(OLED_CS_GPIO_Port, OLED_CS_Pin, GPIO_PIN_RESET)
+#define CS_OLED_DESELECT() HAL_GPIO_WritePin(OLED_CS_GPIO_Port, OLED_CS_Pin, GPIO_PIN_SET)
+#endif
 
 
 /* USER CODE END Private defines */
