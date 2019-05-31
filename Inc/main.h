@@ -48,7 +48,7 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
-#define SET_RTC_TMR
+#undef SET_RTC_TMR
 //#define SET_OLED_I2C
 #define SET_OLED_SPI
 
@@ -90,12 +90,11 @@ typedef struct s_msg_t {
 typedef struct {
 	uint8_t gps_log_show:1;
 	uint8_t i2c_log_show:1;
-	uint8_t sd_list:1;
 	uint8_t restart:1;
 	uint8_t stop:1;
 	uint8_t imei_flag:1;
 	uint8_t vio:1;
-	uint8_t none:1;
+	uint8_t none:2;
 } s_flags;
 #pragma pack(pop)
 
@@ -189,20 +188,11 @@ SPI_HandleTypeDef *portSPI;
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
 
-/*
-#define BLACK_COLOR   "\x1b[30m"
-#define RED_COLOR     "\x1b[31m"
-#define GREEN_COLOR   "\x1b[32m"
-#define YELLOW_COLOR  "\x1b[33m"
-#define BLUE_COLOR    "\x1b[34m"
-#define MAGENTA_COLOR "\x1b[35m"
-#define CYAN_COLOR    "\x1b[36m"
-#define WHITE_COLOR   "\x1b[37m"
-*/
+
 #define wait_sensor_def 15
 #define wait_gps_def wait_sensor_def //>> 1
-#define MAX_UART_BUF 512//480//400//384//256
-#define maxLogSize 65536
+#define MAX_UART_BUF 640//512//480//400//384//256
+
 
 /* USER CODE END EM */
 

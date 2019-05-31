@@ -57,7 +57,8 @@
 //const char *ver = "ver 1.9rc1";//24.05.2019 - major changes : add RTC (rtcclk = 320KHz)
 //const char *ver = "ver 2.0rc1";//25.05.2019 - major changes : add spi OLED SSD1306 (SPI3), remove i2c OLED SSD1306 (i2c1)
 //const char *ver = "ver 2.0rc2";//27.05.2019 - minor changes : add DevID (imei) to json object
-const char *ver = "ver 2.1rc1";//31.05.2019 - major changes : remove SD card from project (it's new branch 'withoutSD')
+//const char *ver = "ver 2.1rc1";//31.05.2019 - major changes : remove SD card from project (it's new branch 'withoutSD')
+const char *ver = "ver 2.1rc2";//31.05.2019 - minor changes : edit without RTC mode
 
 
 /*
@@ -170,23 +171,23 @@ static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
-const uint8_t cmdsMax = 8;//10;
+const uint8_t cmdsMax = 10;
 const char *cmds[] = {
 	"AT\r\n",
 	"AT+CMEE=2\r\n",
 	"AT+GMR\r\n",
 	"AT+GSN\r\n",
-	"AT+CCLK?\r\n",
-//	"AT+CGNSPWR=1\r\n",
+	"AT+CGNSPWR=1\r\n",
 	"AT+CGNSPWR?\r\n",
-	"AT+CSQ\r\n",
+	"AT+CCLK?\r\n",
 	"AT+CREG?\r\n",
-//	"AT+CGNSINF\r\n"
+	"AT+CSQ\r\n",
+	"AT+CGNSINF\r\n",
 };
 
 volatile static bool LoopAll = true;
 uint8_t *adrByte = NULL;
-volatile s_flags flags = {0, 0, 0, 0, 0, 0, 0, 0};
+volatile s_flags flags = {0, 0, 0, 0, 0, 0, 0};
 
 /* USER CODE END PV */
 
@@ -199,8 +200,8 @@ static void MX_TIM2_Init(void);
 static void MX_UART4_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_RTC_Init(void);
 static void MX_SPI3_Init(void);
+static void MX_RTC_Init(void);
 void StartDefTask(void *argument); // for v2
 void StartSensTask(void *argument); // for v2
 void StartAtTask(void *argument); // for v2
@@ -258,8 +259,8 @@ int main(void)
   MX_UART4_Init();
   MX_USART3_UART_Init();
   MX_USART2_UART_Init();
-  MX_RTC_Init();
   MX_SPI3_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
 
 
@@ -988,7 +989,7 @@ int ret = 0;
 		s %= 60;
 		ret = sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, s);
 	} else {//in RTC valid date (epoch time)
-/*
+#ifndef SET_RTC_TMR
  		struct tm ts;
 		time_t ep = (time_t)sec;
 		if (gmtime_r(&ep, &ts) != NULL) {
@@ -1009,7 +1010,7 @@ int ret = 0;
 				ret = sprintf(stx, "%02d.%02d %02d:%02d:%02d",
 							ts.tm_mday, ts.tm_mon + 1, ts.tm_hour, ts.tm_min, ts.tm_sec);
 		}
-*/
+#else
 		RTC_TimeTypeDef sTime;
 		RTC_DateTypeDef sDate;
 		if (HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN)) errLedOn(NULL);
@@ -1025,7 +1026,7 @@ int ret = 0;
 										sTime.Hours, sTime.Minutes, sTime.Seconds);
 			}
 		}
-
+#endif
 	}
 
 	if (log) {
@@ -1063,9 +1064,7 @@ time_t ep = epoch;
 		else setDate = true;
 	}
 }
-#endif
 //----------------------------------------------------------------------------------------
-#ifdef SET_RTC_TMR
 uint32_t getSecRTC(RTC_HandleTypeDef *hrtc)
 {
 time_t ep = 0;
@@ -1099,12 +1098,20 @@ size_t len = MAX_UART_BUF;
 
 	char *buff = (char *)pvPortMalloc(len);
 	if (buff) {
-		buff[0] = 0;
 		int dl = 0, sz;
 		va_list args;
 
-		if (addTime) dl = sec_to_string(get_secCounter(), buff, true);
+		if (addTime) {
 
+#ifdef SET_RTC_TMR
+			dl = sec_to_string(get_secCounter(), buff, true);
+#else
+			uint32_t ep;
+			if (setDate) ep = get_extDate();
+					else ep = get_secCounter();
+			dl = sec_to_string(ep, buff, true);
+#endif
+		}
 		sz = dl;
 		va_start(args, fmt);
 		sz += vsnprintf(buff + dl, len - dl, fmt, args);
@@ -1678,7 +1685,7 @@ void StartDefTask(void *argument)
   		}// end mailqueuehandle
 
 /**/
-  		osDelay(100);
+  		osDelay(10);
   		/**/
 
   		if (flags.restart) {
@@ -1690,7 +1697,7 @@ void StartDefTask(void *argument)
 #ifdef SET_OLED_SPI
   			spi_ssd1306_clear();
 #endif
-  			osDelay(500);
+  			//HAL_Delay(1000);
   			NVIC_SystemReset();
   		}
   		//
@@ -1806,27 +1813,27 @@ void StartAtTask(void *argument)
 	AtParamInit();
 	HAL_Delay(1000);
 	uint32_t tmps = 1250;
-	//if (!getVIO())
-		gsmONOFF(tmps);
+	if (!getVIO()) gsmONOFF(tmps);
 
 	char *uki = msgCMD;
 	const char *buff = NULL;
 	bool cmdsReady = false;
 	uint8_t counter = 0;
 	uint32_t wait_ack = 0;
-	uint64_t new_cmds = 0;
+	uint64_t new_cmds = 0, min_ms = 2, max_ms = 10, tms;
 	flags.imei_flag = 0;
+	char *uk = NULL;
+	uint8_t cnt = 0, max_repeat = 6;
+	bool repeat = false;
 
 	char toScr[SCREEN_SIZE];
 
-	//wait_ack = get_tmr(3);
+	tms = min_ms;
 
 	/* Infinite loop */
 	while (LoopAll) {
 
 		if (getQ(msgAT, &q_at) >= 0) {
-
-			//wait_ack = 0;
 
 			if (strstr(msgAT, "NORMAL POWER DOWN")) {
 				onGSM = false;
@@ -1840,8 +1847,19 @@ void StartAtTask(void *argument)
 						memset(devID, 0, sizeof(devID));
 						strncpy(devID, msgAT, 15);
 					}
-				}
-				else if (strstr(msgAT, "RDY")) counter++;
+				} else if (strstr(msgAT, "+CREG:")) {//+CREG: 0,2
+					cnt++;
+					if (cnt < max_repeat) {
+						if ((uk = strchr(msgAT, ',')) != NULL) {
+							if (*(uk + 1) != '1') repeat = true;
+											 else repeat = false;
+						}
+					} else {
+						cnt = 0;
+						repeat = false;
+					}
+					if (repeat) tms = max_ms;
+				} else if (strstr(msgAT, "RDY")) counter++;
 				else if (strstr(msgAT, "+CFUN:")) counter++;
 				else if (strstr(msgAT, "+CPIN: NOT INSERTED")) counter = 5;
 				else if (strstr(msgAT, "+CPIN: READY")) counter++;
@@ -1850,13 +1868,12 @@ void StartAtTask(void *argument)
 				else if (strstr(msgAT, "ERROR") ||
 							strstr(msgAT, "OK") ||
 								strchr(msgAT, '>') ||
-									strstr(msgAT, "+BTSCAN: 1")) {// ||
-										//strstr(msgAT, "+CGNSINF:")) {
+									strstr(msgAT, "+BTSCAN: 1")) {
 					wait_ack = 0;
 					cmdsDone = true;
 					if (cmdsInd >= 0) {
-						cmdsInd++;
-						new_cmds = get_hstmr(1);//250 ms
+						if (!repeat) { cmdsInd++; tms = min_ms; }
+						new_cmds = get_hstmr(tms);
 					}
 				} else if ((uki = strstr(msgAT, "+CGNSPWR: ")) != NULL) {
 					if (*(uki + 10) == '1') onGNS = true;
@@ -1868,12 +1885,11 @@ void StartAtTask(void *argument)
 				counter = 0;
 				cmdsInd = 0;
 				cmdsDone = true;
-				new_cmds = get_hstmr(1);//6 - 1.5 sec //8//3 sec
+				new_cmds = get_hstmr(min_ms);
 			}
 			Report(false, msgAT);
 
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-			/**/
 			int l = sprintf(toScr, "f:%u on:%u.%u", xPortGetFreeHeapSize(), onGSM, onGNS);
 	#ifdef SET_OLED_I2C
 			i2c_ssd1306_text_xy(toScr, ssd1306_calcx(l), 2);
@@ -1881,14 +1897,13 @@ void StartAtTask(void *argument)
 	#ifdef SET_OLED_SPI
 			spi_ssd1306_text_xy(toScr, ssd1306_calcx(l), 2);
 	#endif
-			/**/
 #endif
 		}
 
 		if (cmdsInd >= 0) {
 			if (cmdsInd >= cmdsMax) {
 				cmdsInd = -1;
-				//flags.gps_log_show = flags.i2c_log_show = 1;
+				flags.gps_log_show = flags.i2c_log_show = 1;
 			} else {
 				if (cmdsDone) {
 					if (check_hstmr(new_cmds)) {
@@ -1916,8 +1931,8 @@ void StartAtTask(void *argument)
 				osDelay(1);
 			}
 			cmdsDone = false;
-			if (strstr(buff, "AT+BTSPPSEND=")) wait_ack = get_tmr(30);//WAIT ACK 30 SEC
-										  else wait_ack = get_tmr(10);
+			if ( (strstr(buff, "AT+BTSPPSEND=")) || (strstr(buff, "AT+COPS")) )	wait_ack = get_tmr(45);//WAIT ACK 30 SEC
+										  	  	  	  	  	  	  	  	   else wait_ack = get_tmr(10);
 			if (strstr(buff, "AT+GSN")) flags.imei_flag = 1;
 
 		}
@@ -1930,7 +1945,7 @@ void StartAtTask(void *argument)
 					if (cmdsInd >= 0) {
 						cmdsInd++;
 						if (cmdsInd >= cmdsMax) cmdsInd = -1;
-										   else new_cmds = get_hstmr(1);//250 ms
+										   else new_cmds = get_hstmr(min_ms);//250 ms
 					} else evt_gsm = 2;//OFF
 				} evt_gsm = 1;//ON
 			}
