@@ -8,8 +8,6 @@
 
 uint8_t spi_invert = OLED_CMD_DISPLAY_NORMAL;
 
-const uint32_t spi_mswait = 10;
-
 //******************************************************************************************
 
 void spi_ssd1306_Reset() {

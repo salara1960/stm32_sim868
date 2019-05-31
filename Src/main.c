@@ -21,13 +21,11 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
-#include "fatfs.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "bmp280.h"
 #include "bh1750.h"
-#include "sd.h"
 
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 	#include "ssd1306.h"
@@ -46,8 +44,8 @@
 //const char *ver = "ver 1.4rc3";//17.05.2019 - minor changes++
 //const char *ver = "ver 1.5rc1";//17.05.2019 - major changes : add json library !!!
 //const char *ver = "ver 1.6rc1";//18.05.2019 - minor changes : for USART3 set speed=500000
-															// in StartGpsTask make json report for +CGNSINF: ......
-															// set MAX_UART_BUF = 400 bytes
+						// in StartGpsTask make json report for +CGNSINF: ......
+						// set MAX_UART_BUF = 400 bytes
 //const char *ver = "ver 1.6rc2";//19.05.2019 - minor changes : add set DateTime (Unix epoch time), for example DATE:1558262631
 //const char *ver = "ver 1.6rc3";//19.05.2019 - minor changes : usart2 instead of uart4 (GPS port)
 //const char *ver = "ver 1.7rc1";//20.05.2019 - major changes : add SD Card (SPI1) !!! (first step : list of root file system)
@@ -57,7 +55,9 @@
 //const char *ver = "ver 1.7rc5";//22.05.2019 - minor changes : support next command : 'DATE:','MOUNT:','UMNT:','LIST:','RESTART:','STOP','GPS:','GSM:','I2C:' <- step 5.
 //const char *ver = "ver 1.8rc1";//23.05.2019 - major changes : set UART4_TX from PA0 to PC10 (PA0 now for command 'STOP')
 //const char *ver = "ver 1.9rc1";//24.05.2019 - major changes : add RTC (rtcclk = 320KHz)
-const char *ver = "ver 2.0rc1";//25.05.2019 - major changes : add spi OLED SSD1306 (SPI3), remove i2c OLED SSD1306 (i2c1)
+//const char *ver = "ver 2.0rc1";//25.05.2019 - major changes : add spi OLED SSD1306 (SPI3), remove i2c OLED SSD1306 (i2c1)
+//const char *ver = "ver 2.0rc2";//27.05.2019 - minor changes : add DevID (imei) to json object
+const char *ver = "ver 2.1rc1";//31.05.2019 - major changes : remove SD card from project (it's new branch 'withoutSD')
 
 
 /*
@@ -87,7 +87,6 @@ I2C_HandleTypeDef hi2c1;
 
 RTC_HandleTypeDef hrtc;
 
-SPI_HandleTypeDef hspi1;
 SPI_HandleTypeDef hspi3;
 DMA_HandleTypeDef hdma_spi3_tx;
 
@@ -107,10 +106,13 @@ osMessageQueueId_t mailQueueHandle;
 osSemaphoreId_t binSemHandle;
 /* USER CODE BEGIN PV */
 
-const char *dev_name = "STM32_SIM868";
 
-volatile static uint32_t secCounter = 0;
-volatile static uint64_t HalfSecCounter = 0;
+const char *dev_name = "STM32_SIM868";
+char devID[16] = {0};//imei of gsm module
+
+volatile static uint32_t secCounter = 0;//period 1s
+volatile static uint64_t HalfSecCounter = 0;//period 250ms
+
 
 HAL_StatusTypeDef i2cError = HAL_OK;
 const uint32_t min_wait_ms = 150;
@@ -124,7 +126,6 @@ I2C_HandleTypeDef *portBH;
 UART_HandleTypeDef *portAT;//huart4;
 UART_HandleTypeDef *portGPS;//huart2;
 UART_HandleTypeDef *portLOG;//huart3;
-SPI_HandleTypeDef *portSPI;//hspi1;
 #ifdef SET_OLED_SPI
 	SPI_HandleTypeDef *portOLED;//hspi3;
 #endif
@@ -161,7 +162,7 @@ uint8_t adone = 0;
 uint32_t atCounter = 0;
 char msgAT[MAX_UART_BUF] = {0};
 static s_msg_t q_at;
-static bool evt_gsm = false;
+static uint8_t evt_gsm = 0;
 static bool OnOffEn = false;
 static bool onGSM = false;
 
@@ -169,29 +170,23 @@ static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
-const uint8_t cmdsMax = 10;
+const uint8_t cmdsMax = 8;//10;
 const char *cmds[] = {
 	"AT\r\n",
-	"AT+CMEE=0\r\n",
+	"AT+CMEE=2\r\n",
 	"AT+GMR\r\n",
 	"AT+GSN\r\n",
 	"AT+CCLK?\r\n",
-	"AT+CGNSPWR=1\r\n",
+//	"AT+CGNSPWR=1\r\n",
 	"AT+CGNSPWR?\r\n",
 	"AT+CSQ\r\n",
 	"AT+CREG?\r\n",
-	"AT+CGNSINF\r\n"
+//	"AT+CGNSINF\r\n"
 };
 
 volatile static bool LoopAll = true;
 uint8_t *adrByte = NULL;
 volatile s_flags flags = {0, 0, 0, 0, 0, 0, 0, 0};
-
-#ifdef SET_SD_CARD
-	const char *diskName = "SD1";
-	const char *dirPath = "/";
-	const char *sens_file_name = "sensors.txt";
-#endif
 
 /* USER CODE END PV */
 
@@ -204,7 +199,6 @@ static void MX_TIM2_Init(void);
 static void MX_UART4_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_SPI1_Init(void);
 static void MX_RTC_Init(void);
 static void MX_SPI3_Init(void);
 void StartDefTask(void *argument); // for v2
@@ -216,7 +210,7 @@ void StartGpsTask(void *argument); // for v2
 
 void Report(bool addTime, const char *fmt, ...);
 void errLedOn(const char *from);
-void gsmONOFF();
+void gsmONOFF(uint32_t tw);
 void ClearRxBuf();
 void initQ(s_msg_t *q);
 int8_t putQ(char *adr, s_msg_t *q);
@@ -264,59 +258,45 @@ int main(void)
   MX_UART4_Init();
   MX_USART3_UART_Init();
   MX_USART2_UART_Init();
-  MX_SPI1_Init();
   MX_RTC_Init();
   MX_SPI3_Init();
   /* USER CODE BEGIN 2 */
 
-#ifdef GSM_KEY_Pin
-  HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//1
-#endif
 
   ClearRxBuf();
 
   portBMP = &hi2c1;//BMP280
 #ifdef SET_OLED_I2C
-  portSSD = &hi2c1;//I2C - OLED ssd1306
+  portSSD = &hi2c1;//I2C1 - OLED ssd1306
+
+  i2c_ssd1306_on(true);//screen ON
+  if (!i2cError) {
+	  i2c_ssd1306_init();//screen INIT
+	  if (!i2cError) {
+		  i2c_ssd1306_pattern();//set any params for screen
+		  if (!i2cError) i2c_ssd1306_clear();//clear screen
+	  }
+  }
 #endif
   portBH  = &hi2c1;//BH1750
   portAT  = &huart4;//AT
   portGPS = &huart2;//GPS
   portLOG = &huart3;//LOG
-  portSPI = &hspi1;//SPI1 - SD Card
 #ifdef SET_OLED_SPI
   portOLED = &hspi3;//SPI3 - OLED SSD1306
-#endif
-
-#ifdef GSM_KEY_Pin
-  HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);
-#endif
-  HAL_GPIO_WritePin(GPIO_PortD, LED_GREEN_Pin | LED_BLUE_Pin | LED_RED_Pin | LED_ORANGE_Pin, GPIO_PIN_RESET);
-
-#ifdef SET_OLED_I2C
-  i2c_ssd1306_on(true);//screen ON
-  if (!i2cError) {
-	  i2c_ssd1306_init();//screen INIT
-  	  if (!i2cError) {
-  		  i2c_ssd1306_pattern();//set any params for screen
-  		  if (!i2cError) i2c_ssd1306_clear();//clear screen
-  	  }
-  }
+  spi_ssd1306_Reset();
+  spi_ssd1306_on(true);//screen ON
+  spi_ssd1306_init();//screen INIT
+  spi_ssd1306_pattern();//set any params for screen
+  spi_ssd1306_clear();//clear screen
 #endif
 
     bh1750_off();
 
-#ifdef SET_OLED_SPI
-    spi_ssd1306_Reset();
-    spi_ssd1306_on(true);//screen ON
-    spi_ssd1306_init();//screen INIT
-    spi_ssd1306_pattern();//set any params for screen
-    spi_ssd1306_clear();//clear screen
-#endif
-
     // start timer2 + interrupt
     HAL_TIM_Base_Start(&htim2);
     HAL_TIM_Base_Start_IT(&htim2);
+
 
   /* USER CODE END 2 */
 
@@ -351,9 +331,12 @@ int main(void)
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
 
-  	  HAL_Delay(1000);
+  	  HAL_Delay(1500);
   	  ClearRxBuf();
   	  HAL_UART_Receive_IT(portLOG, (uint8_t *)&lRxByte, 1);//LOG
+
+  	  //HAL_Delay(1000);
+  	  //Report(true, "GSM vio is %u\r\n", vio);
 
   /* USER CODE END RTOS_QUEUES */
 
@@ -557,46 +540,6 @@ static void MX_RTC_Init(void)
 }
 
 /**
-  * @brief SPI1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI1_Init(void)
-{
-
-  /* USER CODE BEGIN SPI1_Init 0 */
-#ifdef SET_SD_CARD
-	SS_SD_DESELECT();
-#endif
-  /* USER CODE END SPI1_Init 0 */
-
-  /* USER CODE BEGIN SPI1_Init 1 */
-
-  /* USER CODE END SPI1_Init 1 */
-  /* SPI1 parameter configuration*/
-  hspi1.Instance = SPI1;
-  hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
-  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi1.Init.CRCPolynomial = 10;
-  if (HAL_SPI_Init(&hspi1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI1_Init 2 */
-
-  /* USER CODE END SPI1_Init 2 */
-
-}
-
-/**
   * @brief SPI3 Initialization Function
   * @param None
   * @retval None
@@ -702,9 +645,9 @@ static void MX_UART4_Init(void)
 
   /* USER CODE BEGIN UART4_Init 1 */
 
-#ifdef GSM_KEY_Pin
-	HAL_GPIO_WritePin(GPIO_PortD, GSM_KEY_Pin, GPIO_PIN_RESET);//set 1
-#endif
+//#ifdef GSM_KEY_Pin
+//	HAL_GPIO_WritePin(GPIO_PortD, GSM_KEY_Pin, GPIO_PIN_RESET);//set 1
+//#endif
 
   /* USER CODE END UART4_Init 1 */
   huart4.Instance = UART4;
@@ -831,7 +774,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, LED_GREEN_Pin|LED_ORANGE_Pin|LED_RED_Pin|LED_BLUE_Pin, GPIO_PIN_RESET);
@@ -840,7 +783,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(OLED_RST_GPIO_Port, OLED_RST_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, OLED_CS_Pin|SD_CS_Pin|OLED_DC_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, OLED_CS_Pin|OLED_DC_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : USER_IN_Pin */
   GPIO_InitStruct.Pin = USER_IN_Pin;
@@ -875,8 +818,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(OLED_RST_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : OLED_CS_Pin SD_CS_Pin OLED_DC_Pin */
-  GPIO_InitStruct.Pin = OLED_CS_Pin|SD_CS_Pin|OLED_DC_Pin;
+  /*Configure GPIO pins : OLED_CS_Pin OLED_DC_Pin */
+  GPIO_InitStruct.Pin = OLED_CS_Pin|OLED_DC_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -885,6 +828,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
 //-----------------------------------------------------------------------------------------
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 uint8_t ssd1306_calcx(int len)
@@ -896,6 +840,11 @@ uint8_t ret = 0;
     return ret;
 }
 #endif
+//------------------------------------------------------------------------------------------
+bool getVIO()
+{
+	return ((bool)!HAL_GPIO_ReadPin(GSM_STAT_GPIO_Port, GSM_STAT_Pin));
+}
 //------------------------------------------------------------------------------------------
 uint8_t hextobin(char st, char ml)
 {
@@ -909,14 +858,16 @@ uint8_t a, b, c, i;
     return a;
 }
 //------------------------------------------------------------------------------------------
-void gsmONOFF()
+/**/
+void gsmONOFF(uint32_t twait)
 {
-	Report(true, "[%s] GSM_KEY set to 0\r\n", __func__);
+	Report(true, "GSM_KEY set to 0 (vio=%u)\r\n", getVIO());
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);//set 0
-	HAL_Delay(1350);
+	HAL_Delay(twait);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
-	Report(true, "[%s] GSM_KEY set to 1\r\n", __func__);
+	Report(true, "GSM_KEY set to 1 (vio=%u)\r\n", getVIO());
 }
+/**/
 //-----------------------------------------------------------------------------
 void ClearRxBuf()
 {
@@ -1225,7 +1176,7 @@ void getNMEA()
 		char *uk = strstr(GpsRxBuf, _extRMC);//const char *_extRMC = "$GNRMC";
 		if (uk) {
 			rmc5++;
-			if (rmc5 >= wait_sensor_def) {
+			if (rmc5 >= wait_gps_def) {
 				rmc5 = 0;
 				if (LoopAll) {
 					int len = strlen(GpsRxBuf);
@@ -1313,68 +1264,44 @@ void LogData()
 			} else setDate = true;
 			evt_clear = true;
 		} else {
-#ifdef SET_SD_CARD
-			if (strstr(RxBuf, "UMNT:")) {
-				if (!flags.sd_umount) {
-					flags.sd_umount = 1; priz = true;
-				}
-			} else if (strstr(RxBuf, "MOUNT:")) {
-				if (!flags.sd_mount) {
-					flags.sd_mount = 1; priz = true;
-				}
-			} else if (strstr(RxBuf, "LIST:")) {
-				flags.sd_list = 1; priz = true;
-			} else {
-#endif
-				if (strstr(RxBuf, "GSM:")) {
-					evt_gsm = true; priz = true;
-				} else {
-					if (strstr(RxBuf, "GPS:")) {
-						flags.gps_log_show = ~flags.gps_log_show; priz = true;
-					} else {
-						if (strstr(RxBuf, "I2C:")) {
-							flags.i2c_log_show = ~flags.i2c_log_show; priz = true;
-						} else {
-							if (strstr(RxBuf, "RESTART:")) {
-#ifdef SET_SD_CARD
-								flags.sd_umount = 1;
-#endif
-								if (LoopAll) flags.restart = 1;
-								else {
+				if (strstr(RxBuf, "VIO:")) {
+					flags.vio = 1; priz = true;
+				} else if (strstr(RxBuf, "ON:")) {
+					evt_gsm = 1; priz = true;
+				} else if (strstr(RxBuf, "OFF:")) {
+					evt_gsm = 2; priz = true;
+				} else if (strstr(RxBuf, "GPS:")) {
+					flags.gps_log_show = ~flags.gps_log_show; priz = true;
+				} else if (strstr(RxBuf, "I2C:")) {
+					flags.i2c_log_show = ~flags.i2c_log_show; priz = true;
+				} else if (strstr(RxBuf, "RESTART:")) {
+					if (LoopAll) flags.restart = 1;
+					else {
 #ifdef SET_OLED_I2C
-									i2c_ssd1306_clear();
+						i2c_ssd1306_clear();
 #endif
 #ifdef SET_OLED_SPI
-									spi_ssd1306_clear();
+						spi_ssd1306_clear();
 #endif
-									NVIC_SystemReset();
-								}
-							} else  if (strstr(RxBuf, "STOP:")) {
-#ifdef SET_SD_CARD
-								flags.sd_umount = 1;
-#endif
-								flags.stop = 1;
-							} else {
-								if (strstr(RxBuf, "AT")) {
-									strcat(RxBuf, "\n"); priz = true;
-								} else {
-									if ((uk = strchr(RxBuf, '\r')) != NULL) *uk = '\0';
-								}
-								if (LoopAll) {
-									int len = strlen(RxBuf);
-									char *buff = (char *)calloc(1, len + 1);
-									if (buff) {
-										memcpy(buff, RxBuf, len);
-										if (putQ(buff, &q_cmd) < 0) free(buff);
-									}
-								}
-							}
+						NVIC_SystemReset();
+					}
+				} else  if (strstr(RxBuf, "STOP:")) {
+					flags.stop = 1;
+				} else {
+					if (strstr(RxBuf, "AT")) {
+						strcat(RxBuf, "\n"); priz = true;
+					} else {
+						if ((uk = strchr(RxBuf, '\r')) != NULL) *uk = '\0';
+					}
+					if (LoopAll) {
+						int len = strlen(RxBuf);
+						char *buff = (char *)calloc(1, len + 1);
+						if (buff) {
+							memcpy(buff, RxBuf, len);
+							if (putQ(buff, &q_cmd) < 0) free(buff);
 						}
 					}
 				}
-#ifdef SET_SD_CARD
-			}
-#endif
 
 			if (priz) {
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
@@ -1442,8 +1369,8 @@ void AtParamInit()
 	cmdsInd = -1;
 	initQ(&q_at);
 	initQ(&q_cmd);
-	HAL_UART_Receive_IT(portAT, (uint8_t *)&aRxByte, 1);//AT
 	OnOffEn = true;
+	HAL_UART_Receive_IT(portAT, (uint8_t *)&aRxByte, 1);//AT
 }
 //------------------------------------------------------------------------------------------
 void GpsParamInit()
@@ -1629,94 +1556,20 @@ int8_t parse_inf(char *in, s_inf_t *inf)
 	}
 	return 0;
 }
-
-#ifdef SET_SD_CARD
 //------------------------------------------------------------------------------------------
-static char *fatAttr(uint8_t attr)
+/*
+void startKEY()
 {
-	switch (attr) {
-		case AM_RDO://0x01	/* Read only */
-			return "ReadOnly";
-		case AM_HID://	0x02	/* Hidden */
-			return "Hidden";
-		case AM_SYS://	0x04	/* System */
-			return "System";
-		case AM_DIR://	0x10	/* Directory */
-			return "Directory";
-		case AM_ARC://	0x20	/* Archive */
-			return "Archive";
-	}
-	return "Unknown";
-}
-//-----------------------------------------------------------------------------------
-// print <= 16 line from file
-void print_file(const char *filename)
-{
-	FIL fp;
-	if (!f_open (&fp, filename, FA_READ)) {
-		char *stx = (char *)pvPortMalloc(256);
-		if (stx) {
-			while (f_gets(stx, 253, &fp)) {
-				if (!strchr(stx, '\r')) strcat(stx, "\r");
-				Report(false, stx);
-				stx[0] = 0;
-    		}
-			vPortFree(stx);
-    	}
-    	f_close(&fp);
-    }
-
+	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);//set 0
+	Report(true, "GSM_KEY set to 0 (vio=%u)\r\n", vio);
 }
 //------------------------------------------------------------------------------------------
-int save_file(const char *ffname, const char *str, int *counter)
+void stopKEY()
 {
-int res = 0, cnt = *counter;
-FIL fp;
-
-	if (!f_open(&fp, ffname, FA_OPEN_ALWAYS | FA_WRITE)) {
-		FSIZE_t sz = f_size(&fp);
-		if ((sz + strlen(str)) > (DWORD)maxLogSize) {
-			cnt = 0;
-			f_close(&fp);
-			if (!f_unlink(ffname)) Report(true, "Delete file '%s' OK !\r\n", ffname);
-							  else Report(true, "Delete file '%s' ERROR !\r\n", ffname);
-		} else {
-			if (!f_lseek(&fp, sz)) res = f_puts(str, &fp);
-			f_close(&fp);
-		}
-	}
-
-	if (res > 0) cnt++;
-	*counter = cnt;
-
-	return res;
+	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
+	Report(true, "GSM_KEY set to 1 (vio=%u)\r\n", vio);
 }
-//------------------------------------------------------------------------------------------
-void list_dir(const char *folder)
-{
-	DIR dir;
-	FRESULT res = f_opendir(&dir, folder);
-	if (res == FR_OK) {
-		FILINFO fileInfo;
-		int nFiles = 0;
-		while (((res = f_readdir(&dir, &fileInfo)) == FR_OK) && (fileInfo.fname[0] != 0)) {
-  			nFiles++;
-  			fat_date_t *fdate = (fat_date_t *)&fileInfo.fdate;
-  			fat_time_t *ftime = (fat_time_t *)&fileInfo.ftime;
-  			if ((fileInfo.fattrib >= 1)  && (fileInfo.fattrib <= 0x20))
-  				Report(true, "\t%d: %lu\t%s\t%02u.%02u.%04u %02u:%02u:%02u\t'%.*s'\r\n",
-  					nFiles,
-					fileInfo.fsize,
-					fatAttr(fileInfo.fattrib),
-					fdate->day, fdate->mon, fdate->year + 1980,	//fileInfo.fdate,
-					ftime->hour, ftime->min, ftime->sec,  		//fileInfo.ftime,
-					sizeof(fileInfo.fname), fileInfo.fname);
-		}
-		f_closedir(&dir);
-	}
-}
-#endif
-
+*/
 //------------------------------------------------------------------------------------------
 
 /* USER CODE END 4 */
@@ -1730,8 +1583,6 @@ void list_dir(const char *folder)
 /* USER CODE END Header_StartDefTask */
 void StartDefTask(void *argument)
 {
-  /* init code for FATFS */
-  MX_FATFS_Init();
 
   /* USER CODE BEGIN 5 */
 
@@ -1742,29 +1593,6 @@ void StartDefTask(void *argument)
 	result_t levt;
 	iresult_t evt;
 	uint8_t show;
-
-
-#ifdef SET_SD_CARD
-	//for FatFS
-	char tmp[64];
-	int rt = 0, cnt = 0;
-	FRESULT mnt = FR_DISK_ERR;
-	FATFS dsk;
-	FATFS *udsk = &dsk;
-	mnt = f_mount(&dsk, diskName, 1);
-	if (mnt != FR_OK) Report(true, "Disk '%s' mount Error - %d\r\n", diskName, mnt);
-	else {
-		DWORD fre_clust = 0, fre_sect = 0, tot_sect = 0;
-		f_getfree(diskName, &fre_clust, &udsk);
-		tot_sect = (udsk->n_fatent - 2) * udsk->csize;
-		fre_sect = fre_clust * udsk->csize;
-		Report(true, "Disk '%s' mount OK. Space : total %lu KB, free %lu KB.\r\n", diskName, tot_sect/2, fre_sect/2);
-		list_dir(dirPath);
-		sprintf(tmp, "%s%s", dirPath, sens_file_name);
-		if (!f_unlink(tmp)) { Report(true, "Delete file '%s' OK !\r\n", tmp); osDelay(1000); }
-					   else Report(true, "Delete file '%s' ERROR !\r\n", tmp);
-	}
-#endif
 
 	jfes_config_t jconf = {
 		.jfes_malloc = (jfes_malloc_t)pvPortMalloc,
@@ -1778,7 +1606,7 @@ void StartDefTask(void *argument)
 
   	while (LoopAll)   {
 
-  		/**/
+/**/
   		if (mailQueueHandle) {
   			if (osMessageQueueGet(mailQueueHandle, (void *)&levt, NULL, 100) == osOK) {
   				mkMsgData(&levt, &evt);
@@ -1787,6 +1615,7 @@ void StartDefTask(void *argument)
   				if (show) {
   					obj = jfes_create_object_value(&jconf);
   					jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, "SENSOR", 0), "MsgType", 0);
+  					if (strlen(devID)) jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, devID, 0), "DevID", 0);
   					jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, dev_name, 0), "DevName", 0);
   					jfes_set_object_property(&jconf, obj, jfes_create_integer_value(&jconf, get_secCounter()), "DevTime", 0);
 					if (setDate) {
@@ -1834,14 +1663,6 @@ void StartDefTask(void *argument)
   				//
   				if (show) Report(true, DefBuf);
 
-#ifdef SET_SD_CARD
-  				if (!mnt) {
-  					sprintf(tmp, "%s%s", dirPath, sens_file_name);
-  					rt = save_file((const char *)tmp, DefBuf, &cnt);
-  					Report(false, "\tWrite to file '%s' +%d bytes (%d)\r\n", tmp, rt, cnt);
-  					list_dir(dirPath);
-  				}
-#endif
   				if (obj) {
   					buf_size = MAX_UART_BUF - 1;
   					jfes_value_to_string(obj, DefBuf, &buf_size, 1);
@@ -1854,40 +1675,12 @@ void StartDefTask(void *argument)
   				}
 
   			}
-  		}
-		/**/
+  		}// end mailqueuehandle
+
+/**/
   		osDelay(100);
   		/**/
 
-#ifdef SET_SD_CARD
-  		if (flags.sd_list) {
-  			flags.sd_list = 0;
-  			if (!mnt) {
-  				Report(false, "\tList of dir '%s':\r\n", dirPath);
-  				list_dir(dirPath);
-  			}
-  		}
-
-  		if (flags.sd_umount) {
-  			flags.sd_umount = 0;
-  			if (!mnt) {
-  				mnt = f_mount(0, diskName, 0);
-  				if (mnt != FR_OK) Report(true, "Umount disk '%s' Error - %d\r\n", diskName, mnt);
-  							 else Report(true, "Umount disk '%s' OK\r\n", diskName);
-  		  		mnt = FR_NOT_READY;
-  			}
-  		}
-
-  		if (flags.sd_mount) {
-  			flags.sd_mount = 0;
-  			if (mnt) {
-  				mnt = f_mount(&dsk, diskName, 1);
-  				if (mnt != FR_OK) Report(true, "Disk '%s' mount Error - %d\r\n", diskName, mnt);
-  							 else Report(true, "Disk '%s' mount OK\r\n",diskName);
-  			}
-  		}
-#endif
-  		//
   		if (flags.restart) {
   			flags.restart = 0;
   			Report(true, "Restart all !\r\n");
@@ -1897,7 +1690,7 @@ void StartDefTask(void *argument)
 #ifdef SET_OLED_SPI
   			spi_ssd1306_clear();
 #endif
-  			osDelay(1000);
+  			osDelay(500);
   			NVIC_SystemReset();
   		}
   		//
@@ -1905,7 +1698,7 @@ void StartDefTask(void *argument)
   			flags.stop = 0;
   			int dl = sprintf(toScreen, "Stop All");
   			Report(true, "%s!\r\n", toScreen);
-  			osDelay(1000);
+  			osDelay(500);
 #ifdef SET_OLED_I2C
   			i2c_ssd1306_text_xy(toScreen, ssd1306_calcx(dl), 5);
 #endif
@@ -2011,7 +1804,10 @@ void StartAtTask(void *argument)
   /* USER CODE BEGIN StartAtTask */
 
 	AtParamInit();
-	gsmONOFF();
+	HAL_Delay(1000);
+	uint32_t tmps = 1250;
+	//if (!getVIO())
+		gsmONOFF(tmps);
 
 	char *uki = msgCMD;
 	const char *buff = NULL;
@@ -2019,29 +1815,38 @@ void StartAtTask(void *argument)
 	uint8_t counter = 0;
 	uint32_t wait_ack = 0;
 	uint64_t new_cmds = 0;
+	flags.imei_flag = 0;
 
-	/**/
 	char toScr[SCREEN_SIZE];
-	size_t fmem = xPortGetFreeHeapSize();
-	//ssd1306_text_xy(toScr, ssd1306_calcx(sprintf(toScr, "f:%u on:%u.%u", fmem, onGSM, onGNS)), 2);
-	/**/
+
+	//wait_ack = get_tmr(3);
 
 	/* Infinite loop */
 	while (LoopAll) {
 
 		if (getQ(msgAT, &q_at) >= 0) {
+
+			//wait_ack = 0;
+
 			if (strstr(msgAT, "NORMAL POWER DOWN")) {
 				onGSM = false;
 				flags.gps_log_show = flags.i2c_log_show = 0;
-				if (!wait_ack) wait_ack = get_tmr(3);
+				if (!wait_ack) wait_ack = get_tmr(2);
 			} else if (strlen(msgAT)) {
 				onGSM = true;
-				if (strstr(msgAT, "RDY")) counter++;
+				if (flags.imei_flag) {
+					flags.imei_flag = 0;
+					if (strlen(msgAT) >= 15) {
+						memset(devID, 0, sizeof(devID));
+						strncpy(devID, msgAT, 15);
+					}
+				}
+				else if (strstr(msgAT, "RDY")) counter++;
 				else if (strstr(msgAT, "+CFUN:")) counter++;
 				else if (strstr(msgAT, "+CPIN: NOT INSERTED")) counter = 5;
 				else if (strstr(msgAT, "+CPIN: READY")) counter++;
 				else if (strstr(msgAT, "Call Ready")) counter++;
-				else if (strstr(msgAT, "SMS Ready")) counter++;
+				else if (strstr(msgAT, "SMS Ready")) counter = 5;
 				else if (strstr(msgAT, "ERROR") ||
 							strstr(msgAT, "OK") ||
 								strchr(msgAT, '>') ||
@@ -2063,21 +1868,19 @@ void StartAtTask(void *argument)
 				counter = 0;
 				cmdsInd = 0;
 				cmdsDone = true;
-				new_cmds = get_hstmr(6);//6 - 1.5 sec //8//3 sec
+				new_cmds = get_hstmr(1);//6 - 1.5 sec //8//3 sec
 			}
 			Report(false, msgAT);
+
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 			/**/
-			//if (fmem != xPortGetFreeHeapSize()) {
-				fmem = xPortGetFreeHeapSize();
-				int l = sprintf(toScr, "f:%u on:%u.%u", fmem, onGSM, onGNS);
+			int l = sprintf(toScr, "f:%u on:%u.%u", xPortGetFreeHeapSize(), onGSM, onGNS);
 	#ifdef SET_OLED_I2C
-				i2c_ssd1306_text_xy(toScr, ssd1306_calcx(l), 2);
+			i2c_ssd1306_text_xy(toScr, ssd1306_calcx(l), 2);
 	#endif
 	#ifdef SET_OLED_SPI
-				spi_ssd1306_text_xy(toScr, ssd1306_calcx(l), 2);
+			spi_ssd1306_text_xy(toScr, ssd1306_calcx(l), 2);
 	#endif
-			//}
 			/**/
 #endif
 		}
@@ -2085,7 +1888,7 @@ void StartAtTask(void *argument)
 		if (cmdsInd >= 0) {
 			if (cmdsInd >= cmdsMax) {
 				cmdsInd = -1;
-				flags.gps_log_show = flags.i2c_log_show = 1;
+				//flags.gps_log_show = flags.i2c_log_show = 1;
 			} else {
 				if (cmdsDone) {
 					if (check_hstmr(new_cmds)) {
@@ -2113,25 +1916,37 @@ void StartAtTask(void *argument)
 				osDelay(1);
 			}
 			cmdsDone = false;
-			if (strstr(buff, "AT+BTSPPSEND="))
-				wait_ack = get_tmr(30);//WAIT ACK 30 SEC
-			else
-				wait_ack = get_tmr(10);//WAIT ACK 10 SEC
-		}
+			if (strstr(buff, "AT+BTSPPSEND=")) wait_ack = get_tmr(30);//WAIT ACK 30 SEC
+										  else wait_ack = get_tmr(10);
+			if (strstr(buff, "AT+GSN")) flags.imei_flag = 1;
 
+		}
 
 		if (wait_ack) {
 			if (check_tmr(wait_ack)) {
-				evt_gsm = true;
 				wait_ack = 0;
+				cmdsDone = true;
+				if (getVIO()) {
+					if (cmdsInd >= 0) {
+						cmdsInd++;
+						if (cmdsInd >= cmdsMax) cmdsInd = -1;
+										   else new_cmds = get_hstmr(1);//250 ms
+					} else evt_gsm = 2;//OFF
+				} evt_gsm = 1;//ON
 			}
 		}
 
 		if (evt_gsm) {
-			evt_gsm = false;
+			if (evt_gsm == 2) tmps = 1850; else tmps = 1250;
+			evt_gsm = 0;
 			AtParamInit();
 			flags.gps_log_show = flags.i2c_log_show = 0;
-			gsmONOFF();
+			gsmONOFF(tmps);
+		}
+
+		if (flags.vio) {
+			flags.vio = 0;
+			Report(true, "GSM VIO is %u\r\n", getVIO());
 		}
 
 		osDelay(10);
@@ -2192,6 +2007,7 @@ void StartGpsTask(void *argument)
 					obj = jfes_create_object_value(&jconf);
 					if (obj) {
 						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, "$GNRMC", 0), "MsgType", 0);
+						if (strlen(devID)) jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, devID, 0), "DevID", 0);
 						jfes_set_object_property(&jconf, obj, jfes_create_string_value(&jconf, dev_name, 0), "DevName", 0);
 						jfes_set_object_property(&jconf, obj, jfes_create_integer_value(&jconf, get_secCounter()), "DevTime", 0);
 						if (setDate) {
@@ -2234,6 +2050,7 @@ void StartGpsTask(void *argument)
 				obj2 = jfes_create_object_value(&jconf2);
 				if (obj2) {
 					jfes_set_object_property(&jconf2, obj2, jfes_create_string_value(&jconf2, "+CGNSINF", 0), "MsgType", 0);
+					if (strlen(devID)) jfes_set_object_property(&jconf2, obj2, jfes_create_string_value(&jconf2, devID, 0), "DevID", 0);
 					jfes_set_object_property(&jconf2, obj2, jfes_create_string_value(&jconf2, dev_name, 0), "DevName", 0);
 					jfes_set_object_property(&jconf2, obj2, jfes_create_integer_value(&jconf2, get_secCounter()), "DevTime", 0);
 					if (setDate) {
@@ -2344,25 +2161,20 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		#endif
 	#endif
 #endif
-		  if (OnOffEn) {
-			  if (!HAL_GPIO_ReadPin(GSM_STAT_GPIO_Port, GSM_STAT_Pin))
-				  HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//gsm is on
-			  else
-				  HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//gsm is off
-		  }
 		  //------------------------------------------------------------------------------------------
 		  if (HAL_GPIO_ReadPin(USER_IN_GPIO_Port, USER_IN_Pin) == GPIO_PIN_SET) {//user key is pressed
 			  if (!flags.stop) {
-#ifdef SET_SD_CARD
-				  flags.sd_umount = 1;
-#endif
 				  flags.stop = 1;
 			  }
 		  }
 		  //------------------------------------------------------------------------------------------
-
+		  //if (OnOffEn) {
+		  	  if (getVIO()) HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//gsm is on
+		  	  	       else HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//gsm is off
+		  //}
 		  //------------------------------------------------------------------------------------------
 	  }
+
 	  inc_hsCounter();
 
   }

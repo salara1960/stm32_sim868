@@ -48,12 +48,11 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
-#define SET_SD_CARD
 #define SET_RTC_TMR
 //#define SET_OLED_I2C
 #define SET_OLED_SPI
 
-#define MAX_QMSG 8
+#define MAX_QMSG 8//16
 
 #pragma pack(push,1)
 typedef struct {
@@ -92,10 +91,10 @@ typedef struct {
 	uint8_t gps_log_show:1;
 	uint8_t i2c_log_show:1;
 	uint8_t sd_list:1;
-	uint8_t sd_mount:1;
-	uint8_t sd_umount:1;
 	uint8_t restart:1;
 	uint8_t stop:1;
+	uint8_t imei_flag:1;
+	uint8_t vio:1;
 	uint8_t none:1;
 } s_flags;
 #pragma pack(pop)
@@ -163,19 +162,6 @@ typedef enum {
 	HIGH_SPEED = 115200
 } speed_t;
 */
-#ifdef SET_SD_CARD
-typedef struct {
-	uint16_t day:5;//0..4 (1..31)
-	uint16_t mon:4;//5..8 (1..12)
-	uint16_t year:7;//9..15 (0..127) from 1980
-} fat_date_t;
-
-typedef struct {
-	uint16_t sec:5;//0..4 (0..29)
-	uint16_t min:6;//5..10 (0..59)
-	uint16_t hour:5;//11..15 (0..23)
-} fat_time_t;
-#endif
 
 
 /* USER CODE END ET */
@@ -213,7 +199,8 @@ SPI_HandleTypeDef *portSPI;
 #define CYAN_COLOR    "\x1b[36m"
 #define WHITE_COLOR   "\x1b[37m"
 */
-#define wait_sensor_def 10
+#define wait_sensor_def 15
+#define wait_gps_def wait_sensor_def //>> 1
 #define MAX_UART_BUF 512//480//400//384//256
 #define maxLogSize 65536
 
@@ -257,8 +244,6 @@ void Leds(bool act, uint16_t Pin);
 #define OLED_SCK_GPIO_Port GPIOB
 #define OLED_CS_Pin GPIO_PIN_4
 #define OLED_CS_GPIO_Port GPIOB
-#define SD_CS_Pin GPIO_PIN_5
-#define SD_CS_GPIO_Port GPIOB
 #define OLED_DC_Pin GPIO_PIN_6
 #define OLED_DC_GPIO_Port GPIOB
 #define SDA1_Pin GPIO_PIN_7
@@ -272,11 +257,19 @@ void Leds(bool act, uint16_t Pin);
 #define GPIO_PortD GPIOD
 #define LOOP_FOREVER() while(1) {}
 
+//#define SS_SD_SELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_RESET)
+//#define SS_SD_DESELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET)
+//#define LD_ON HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_SET); //RED
+//#define LD_OFF HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_RESET); //RED
 
-#define SS_SD_SELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_RESET)
-#define SS_SD_DESELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET)
-#define LD_ON HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_SET); //RED
-#define LD_OFF HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_RESET); //RED
+#define _250ms 1
+#define _500ms 2
+#define _750ms 3
+#define _1s (_250ms * 5)
+#define _1_250s (_250ms * 5)
+#define _1_500s (_250ms * 6)
+#define _1_750s (_250ms * 7)
+#define _2s (_250ms * 8)
 
 
 #ifdef SET_OLED_SPI
