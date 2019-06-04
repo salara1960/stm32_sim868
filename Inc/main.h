@@ -82,21 +82,34 @@ typedef struct q_msg_t {
 } q_msg_t;
 
 typedef struct s_msg_t {
+	uint8_t mem;
 	uint8_t put;
 	uint8_t get;
 	q_msg_t msg[MAX_QMSG];
 } s_msg_t;
+#pragma pack(pop)
 
 typedef struct {
-	uint8_t gps_log_show:1;
-	uint8_t i2c_log_show:1;
-	uint8_t restart:1;
-	uint8_t stop:1;
-	uint8_t imei_flag:1;
-	uint8_t vio:1;
-	uint8_t none:2;
+	unsigned init:1;
+	unsigned connect:1;
+	unsigned try_connect:1;
+	unsigned try_disconnect:1;
+	unsigned prompt:1;
+	unsigned try_send:1;
+	unsigned cgatt_on:1;
+} s_gprs_stat;
+
+typedef struct {
+	unsigned gps_log_show:1;
+	unsigned i2c_log_show:1;
+	unsigned restart:1;
+	unsigned stop:1;
+	unsigned imei_flag:1;
+	unsigned vio:1;
+	unsigned local_ip_flag:1;
+	unsigned connect:1;
+	unsigned disconnect:1;
 } s_flags;
-#pragma pack(pop)
 
 //$--RMC,hhmmss.sss,x,llll.lll,a,yyyyy.yyy,a,x.x,u.u,xxxxxx,,,v*hh<CR><LF>
 //$GNRMC,001805.868,V,,,,,0.00,0.00,060180,,,N*56
