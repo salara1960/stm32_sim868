@@ -97,6 +97,7 @@ typedef struct {
 	unsigned prompt:1;
 	unsigned try_send:1;
 	unsigned cgatt_on:1;
+	unsigned sens_reset:1;
 } s_gprs_stat;
 
 typedef struct {
@@ -109,6 +110,7 @@ typedef struct {
 	unsigned local_ip_flag:1;
 	unsigned connect:1;
 	unsigned disconnect:1;
+	unsigned srv:1;
 } s_flags;
 
 //$--RMC,hhmmss.sss,x,llll.lll,a,yyyyy.yyy,a,x.x,u.u,xxxxxx,,,v*hh<CR><LF>
