@@ -82,6 +82,7 @@ typedef struct q_msg_t {
 } q_msg_t;
 
 typedef struct s_msg_t {
+	uint8_t total;
 	uint8_t mem;
 	uint8_t put;
 	uint8_t get;
@@ -98,6 +99,7 @@ typedef struct {
 	unsigned try_send:1;
 	unsigned cgatt_on:1;
 	unsigned sens_reset:1;
+	unsigned send_ok:1;
 } s_gprs_stat;
 
 typedef struct {

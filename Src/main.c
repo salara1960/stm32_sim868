@@ -62,7 +62,9 @@
 //const char *ver = "ver 2.2rc1";//03.06.2019 - major changes : create gprs connection and send sensor's type json messages
 //const char *ver = "ver 2.2rc2";//03.06.2019 - minor changes : make functions for make json_string for data
 //const char *ver = "ver 2.2rc3";//04.06.2019 - minor changes : edit gprs connection mode (add commands CON: DIS:)
-const char *ver = "ver 2.2rc4";//05.06.2019 - minor changes : add commands SRV:srv_adr:srv_port (for example : SRV:127.0.0.1:9000)
+//const char *ver = "ver 2.2rc4";//05.06.2019 - minor changes : add commands SRV:srv_adr:srv_port (for example : SRV:127.0.0.1:9000)
+//const char *ver = "ver 2.2rc5";//05.06.2019 - minor changes : add GPS json_string to GPRS_queue (for sending to tcp_server)
+const char *ver = "ver 2.2rc6";//05.06.2019 - minor changes : add function  toDisplay(...);
 
 /*
 post-build steps command:
@@ -199,6 +201,7 @@ const char *cmds[] = {
 
 //	"AT+CGNSINF\r\n"
 };
+
 const char *srv_adr_def = "127.0.0.1";
 const uint16_t srv_port_def = 9090;
 static char srv_adr[64] = {0};
@@ -1168,6 +1171,7 @@ size_t len = MAX_UART_BUF;
 void initQ(s_msg_t *q, uint8_t mem)
 {
 	q->mem = mem;
+	q->total = 0;
 	q->put = q->get = 0;
 	for (uint8_t i = 0; i < MAX_QMSG; i++) {
 		q->msg[i].id = i;
@@ -1183,6 +1187,7 @@ int8_t ret = -1;
 		ret = q->msg[q->put].id;
 		q->msg[q->put].adr = adr;
 		q->put++; if (q->put >= MAX_QMSG) q->put = 0;
+		q->total++;
 	}
 
 	return ret;
@@ -1203,11 +1208,16 @@ int8_t ret = -1;
 			vPortFree(q->msg[q->get].adr);
 		q->msg[q->get].adr = NULL;
 		q->get++; if (q->get >= MAX_QMSG) q->get = 0;
+		q->total--;
 	}
 
 	return ret;
 }
 //------------------------------------------------------------------------------
+uint8_t deepQ(s_msg_t *q)
+{
+	return (q->total);
+}
 //------------------------------------------------------------------------------
 void getAdrPort(char *uk)
 {
@@ -1285,6 +1295,7 @@ void getAT()
 					}
 				}
 			}
+/*
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 			int l = sprintf(AtRxBuf, "MSG: %lu", ++atCounter);
 	#ifdef SET_OLED_I2C
@@ -1294,6 +1305,7 @@ void getAT()
 			spi_ssd1306_text_xy(AtRxBuf, ssd1306_calcx(l), 4);
 	#endif
 #endif
+*/
 			at_rx_uk = adone = 0;
 			memset(AtRxBuf, 0, MAX_UART_BUF);
 		}
@@ -1801,7 +1813,19 @@ int ret = -1;
     return ret;
 }
 //-----------------------------------------------------------------------------------------
-
+void toDisplay(const char *st, uint8_t line, bool clear)
+{
+#ifdef SET_OLED_I2C
+	  if (!i2cError) {
+		  if (clear) i2c_ssd1306_clear_line(line);
+		  i2c_ssd1306_text_xy(st, ssd1306_calcx(strlen(st)), line);
+	  }
+#endif
+#ifdef SET_OLED_SPI
+	  if (clear) spi_ssd1306_clear_line(line);
+	  spi_ssd1306_text_xy(st, ssd1306_calcx(strlen(st)), line);
+#endif
+}
 //-----------------------------------------------------------------------------------------
 
 /* USER CODE END 4 */
@@ -1877,6 +1901,9 @@ void StartDefTask(void *argument)
   								memset(buff, 0, dl + 1);
   								memcpy(buff, DefBuf, dl);
   								if (putQ(buff, &q_gprs) < 0) vPortFree(buff);//error !
+  								else {
+
+  								}
   							}
   						} else Report(true, "%s\r\n", DefBuf);
   					}
@@ -1891,28 +1918,19 @@ void StartDefTask(void *argument)
 
   		if (flags.restart) {
   			flags.restart = 0;
+  			if (gprs_stat.connect) flags.disconnect = 1;
   			Report(true, "Restart all !\r\n");
-#ifdef SET_OLED_I2C
-  			i2c_ssd1306_clear();
-#endif
-#ifdef SET_OLED_SPI
-  			spi_ssd1306_clear();
-#endif
-  			//HAL_Delay(1000);
+  			osDelay(500);
   			NVIC_SystemReset();
   		}
   		//
   		if (flags.stop) {
   			flags.stop = 0;
-  			int dl = sprintf(toScreen, "Stop All");
+  			if (gprs_stat.connect) flags.disconnect = 1;
+  			sprintf(toScreen, "Stop All");
   			Report(true, "%s!\r\n", toScreen);
   			osDelay(500);
-#ifdef SET_OLED_I2C
-  			i2c_ssd1306_text_xy(toScreen, ssd1306_calcx(dl), 5);
-#endif
-#ifdef SET_OLED_SPI
-  			spi_ssd1306_text_xy(toScreen, ssd1306_calcx(dl), 5);
-#endif
+  			toDisplay((const char *)toScreen, 5, false);
   			LoopAll = false;
   		}
   	}
@@ -2034,6 +2052,7 @@ void StartAtTask(void *argument)
 	gprs_stat.connect = gprs_stat.init = 0;
 	gprs_stat.try_connect = gprs_stat.prompt = 0;
 	gprs_stat.try_send = gprs_stat.cgatt_on = 0;
+	gprs_stat.send_ok = 1;
 	bool yes = false;
 	msgGPRS[0] = 0;
 	char cmd[80];
@@ -2043,13 +2062,8 @@ void StartAtTask(void *argument)
 	tms = min_ms;
 
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-			int l = sprintf(toScr, "%s", srv_adr);
-	#ifdef SET_OLED_I2C
-			i2c_ssd1306_text_xy(toScr, ssd1306_calcx(l), 2);
-	#endif
-	#ifdef SET_OLED_SPI
-			spi_ssd1306_text_xy(toScr, ssd1306_calcx(l), 2);
-	#endif
+	sprintf(toScr, "%s", srv_adr);
+	toDisplay((const char *)toScr, 2, false);
 #endif
 
 	/* Infinite loop */
@@ -2108,8 +2122,10 @@ void StartAtTask(void *argument)
 								strstr(msgAT, "CLOSE") ||
 									strchr(msgAT, '>') ||
 										strstr(msgAT, "+BTSCAN: 1")) {
-						if ((strstr(msgAT, "CLOSE") || strstr(msgAT, "ERROR")) && gprs_stat.connect) {
+						if (strstr(msgAT, "SEND OK")) gprs_stat.send_ok = 1;
+						else if ((strstr(msgAT, "CLOSE") || strstr(msgAT, "ERROR")) && gprs_stat.connect) {
 							gprs_stat.connect = 0;
+							gprs_stat.send_ok = 1;
 							Report(true, "--- DISCONNECTED ---\r\n");
 							if (gprs_stat.try_disconnect) gprs_stat.try_disconnect = 0;
 						}
@@ -2117,11 +2133,13 @@ void StartAtTask(void *argument)
 						if (gprs_stat.try_connect) {
 							if (strstr(msgAT, "CONNECT")) {
 								gprs_stat.connect = 1;
+								gprs_stat.send_ok = 1;
 								Report(true, "+++ CONNECTED +++\r\n");
 								gprs_stat.try_connect = 0;
 								gprs_stat.sens_reset = 1;
 							}
 						}
+
 
 						wait_ack = 0;
 						cmdsDone = true;
@@ -2152,8 +2170,7 @@ void StartAtTask(void *argument)
 		if (cmdsInd >= 0) {
 			if (cmdsInd >= cmdsMax) {
 				cmdsInd = -1;
-				//flags.gps_log_show =
-				flags.i2c_log_show = 1;
+				flags.gps_log_show = flags.i2c_log_show = 1;
 			} else {
 				if (cmdsDone) {
 					if (check_hstmr(new_cmds)) {
@@ -2179,13 +2196,8 @@ void StartAtTask(void *argument)
   			flags.srv = 0;
   			Report(true, "NEW SERVER : %s:%u\r\n", srv_adr, srv_port);
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-			int l = sprintf(toScr, "%s", srv_adr);
-	#ifdef SET_OLED_I2C
-			i2c_ssd1306_text_xy(toScr, ssd1306_calcx(l), 2);
-	#endif
-	#ifdef SET_OLED_SPI
-			spi_ssd1306_text_xy(toScr, ssd1306_calcx(l), 2);
-	#endif
+			sprintf(toScr, "%s", srv_adr);
+			toDisplay((const char *)toScr, 2, false);
 #endif
   		}
 
@@ -2213,8 +2225,14 @@ void StartAtTask(void *argument)
 				}
 			}
 		}
-		if (gprs_stat.connect) {
+		if (gprs_stat.connect && gprs_stat.send_ok) {
 			if (cmdsDone) {
+//
+#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+		  sprintf(toScr, "msgQ:%u", deepQ(&q_gprs));
+		  toDisplay((const char *)toScr, 4, false);
+#endif
+//
 				if (getQ(msgGPRS, &q_gprs) >= 0) {
 					strcat(msgGPRS, "\r\n");
 					sprintf(cmd, "AT+CIPSEND=%d\r\n", strlen(msgGPRS));
@@ -2251,6 +2269,8 @@ void StartAtTask(void *argument)
 			if (strstr(buff, "AT+CIFSR")) flags.local_ip_flag = 1;
 
 			if (cmdsInd == -1) wait_ack = 0;
+
+			if (strstr(buff, "AT+CIPSEND=")) gprs_stat.send_ok = 0;
 		}
 
 		if (wait_ack) {
@@ -2324,7 +2344,20 @@ void StartGpsTask(void *argument)
 			if (flags.gps_log_show) Report(true, msgNMEA);
 			if (!parse_gps(msgNMEA, &one)) {
 				if (flags.gps_log_show) {
-					if (!makeRMCJsonString(&one, msgNMEA)) Report(false, "%s\r\n", msgNMEA);
+					if (!makeRMCJsonString(&one, msgNMEA)) {
+						//
+						int dl = strlen(msgNMEA);
+						if (gprs_stat.connect) {
+							char *buff = (char *)pvPortMalloc(dl + 1);//calloc(1, buf_size + 1);
+							if (buff) {
+								memset(buff, 0, dl + 1);
+								memcpy(buff, msgNMEA, dl);
+								if (putQ(buff, &q_gprs) < 0) vPortFree(buff);//error !
+							}
+						} else Report(true, "%s\r\n", msgNMEA);
+
+						//Report(false, "%s\r\n", msgNMEA);
+					}
 				}
 			}
 
@@ -2376,30 +2409,20 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 #endif
 		  }
 		  char scrBuf[32];
-		  int l;
 #ifndef SET_RTC_TMR
 		  if (epochSet) inc_extDate();
 		  uint32_t ep;
 		  if (setDate) ep = get_extDate();
 		   	  	  else ep = get_secCounter();
 	#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-		  l = sec_to_string(ep, scrBuf, false);
-		#ifdef SET_OLED_I2C
-		  if (!i2cError) i2c_ssd1306_text_xy(scrBuf, ssd1306_calcx(l), 1);
-		#endif
-		#ifdef SET_OLED_SPI
-		  spi_ssd1306_text_xy(scrBuf, ssd1306_calcx(l), 1);
-		#endif
+		  sec_to_string(ep, scrBuf, false);
+		  toDisplay((const char *)scrBuf, 1, false);
 	#endif
 #else
 	#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-		  l = sec_to_string(get_secCounter(), scrBuf, false);
-		#ifdef SET_OLED_I2C
-		  if (!i2cError) i2c_ssd1306_text_xy(scrBuf, ssd1306_calcx(l), 1);
-		#endif
-		#ifdef SET_OLED_SPI
-		  spi_ssd1306_text_xy(scrBuf, ssd1306_calcx(l), 1);
-		#endif
+		  sec_to_string(get_secCounter(), scrBuf, false);
+		  toDisplay((const char *)scrBuf, 1, false);
+
 	#endif
 #endif
 		  //------------------------------------------------------------------------------------------
@@ -2415,19 +2438,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		  //}
 		  //------------------------------------------------------------------------------------------
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-		  l = strlen(conStatus[gprs_stat.connect]);
-	#ifdef SET_OLED_I2C
-		  if (!i2cError) {
-			  i2c_ssd1306_clear_line(3);
-			  i2c_ssd1306_text_xy(conStatus[gprs_stat.connect], ssd1306_calcx(l), 3);
-		  }
-	#endif
-	#ifdef SET_OLED_SPI
-		  spi_ssd1306_clear_line(3);
-		  spi_ssd1306_text_xy(conStatus[gprs_stat.connect], ssd1306_calcx(l), 3);
-	#endif
+		  strlen(conStatus[gprs_stat.connect]);
+		  toDisplay((const char *)conStatus[gprs_stat.connect], 3, true);
 #endif
-
 	  }
 
 	  inc_hsCounter();
