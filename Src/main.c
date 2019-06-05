@@ -61,8 +61,8 @@
 //const char *ver = "ver 2.1rc2";//31.05.2019 - minor changes : edit without RTC mode
 //const char *ver = "ver 2.2rc1";//03.06.2019 - major changes : create gprs connection and send sensor's type json messages
 //const char *ver = "ver 2.2rc2";//03.06.2019 - minor changes : make functions for make json_string for data
-const char *ver = "ver 2.2rc3";//04.06.2019 - minor changes : edit gprs connection mode (add commands CON: DIS:)
-
+//const char *ver = "ver 2.2rc3";//04.06.2019 - minor changes : edit gprs connection mode (add commands CON: DIS:)
+const char *ver = "ver 2.2rc4";//05.06.2019 - minor changes : add commands SRV:srv_adr:srv_port (for example : SRV:127.0.0.1:9000)
 
 /*
 post-build steps command:
@@ -199,15 +199,13 @@ const char *cmds[] = {
 
 //	"AT+CGNSINF\r\n"
 };
-const char *srv_adr_def = "95.30.189.91";
+const char *srv_adr_def = "127.0.0.1";
 const uint16_t srv_port_def = 9090;
 static char srv_adr[64] = {0};
 static uint16_t srv_port;
 static s_msg_t q_gprs;
-//const char *gprsCONNECT = "AT+CIPSTART=\"TCP\",\"95.30.189.91\",9090\r\n";
 const char *gprsDISCONNECT = "AT+CIPCLOSE\r\n";
 char msgGPRS[MAX_UART_BUF] = {0};
-//const char *srv = "37.147.180.170:9090";
 const char *conStatus[] = {"Disconnect", "Connect"};
 
 uint32_t sensCounter = 0;
@@ -1802,6 +1800,8 @@ int ret = -1;
     
     return ret;
 }
+//-----------------------------------------------------------------------------------------
+
 //-----------------------------------------------------------------------------------------
 
 /* USER CODE END 4 */
