@@ -58,9 +58,9 @@ unsigned char SIGTRAPs = 1;
 static char dt_str[TIME_STR_LEN] = {0};
 
 const char *SeqNum = "SeqNum";
-const char *SensSN = "SensSeqNum";
-const char *GpsSN  = "GpsSeqNum";
-
+//const char *SensSN = "SensSeqNum";
+//const char *GpsSN  = "GpsSeqNum";
+const char *DataSN = "DataSeqNum";
 
 //------------------------------------------------------------------------
 char *TimeNowPrn(char *ts)
@@ -185,17 +185,11 @@ char *stx = NULL;
         return ret;
     }
 
-    tmp = json_object_get(obj, SensSN);
+    tmp = json_object_get(obj, DataSN);
     if (tmp) {
         ret = json_integer_value(tmp);
-        strcpy(packName, SensSN);
-    } else {
-        tmp = json_object_get(obj, GpsSN);
-        if (tmp) {
-            ret = json_integer_value(tmp);
-            strcpy(packName, GpsSN);
-        }
-    }
+        strcpy(packName, DataSN);
+    } else strcpy(packName, "Unknown");
 
     if (obj) json_decref(obj);
 

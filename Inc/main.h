@@ -82,8 +82,6 @@ typedef struct q_msg_t {
 } q_msg_t;
 
 typedef struct s_msg_t {
-	uint8_t total;
-	uint8_t mem;
 	uint8_t put;
 	uint8_t get;
 	q_msg_t msg[MAX_QMSG];
@@ -113,6 +111,8 @@ typedef struct {
 	unsigned connect:1;
 	unsigned disconnect:1;
 	unsigned srv:1;
+	unsigned combo_show:1;
+	unsigned sens_begin:1;
 } s_flags;
 
 //$--RMC,hhmmss.sss,x,llll.lll,a,yyyyy.yyy,a,x.x,u.u,xxxxxx,,,v*hh<CR><LF>
@@ -170,14 +170,12 @@ typedef struct {
 	float HPA;			//20
 	float VPA;			//21
 } s_inf_t;
-#pragma pack(pop)
 
-/*
-typedef enum {
-	LOW_SPEED = 9600,
-	HIGH_SPEED = 115200
-} speed_t;
-*/
+typedef struct {
+	result_t sens;
+	s_gps_t rmc;
+} s_data_t;//allData;
+#pragma pack(pop)
 
 
 /* USER CODE END ET */
@@ -206,8 +204,8 @@ SPI_HandleTypeDef *portSPI;
 /* USER CODE BEGIN EM */
 
 
-#define wait_sensor_def 15
-#define wait_gps_def wait_sensor_def //>> 1
+#define wait_sensor_def 12
+#define wait_gps_def wait_sensor_def - 2 //>> 1
 #define MAX_UART_BUF 640//512//480//400//384//256
 
 

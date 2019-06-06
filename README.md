@@ -29,10 +29,9 @@
 # Функционал:
 
 * Устройство использует программные средства freeRTOS :
-  - StartGpsTask - нитка (задача), работающая с данными GPS (NMEA) модуля SIM868.
   - StartAtTask - нитка (задача), работающая портом команд модуля SIM868.
   - STartSensTask - нитка (задача), работающая с датчиками bmp280, bh1750.
-  - StartDefTask - нитка (задача), выполняющая функцию main.
+  - StartDefTask - нитка (задача), выполняющая функцию main и работающая с данными GPS (NMEA) модуля SIM868.
   - mailQueue - очередь для передачи данных от bmp280 и bh1750 из задачи StartSensTask в задачу StartDefTask,
     для вывода данных на дисплей ssd1306 и для вывода в последовательный порт (USART3).
   - binSemHandle - бинарный семафор на доступ к порту usart3 (по записи).
@@ -61,47 +60,76 @@ NORMAL POWER DOWN
 
 RDY
 +CFUN: 1
-+CPIN: NOT INSERTED
++CPIN: READY
+Call Ready
+SMS Ready
 AT
 OK
-AT+CMEE=0
+AT+CMEE=2
 OK
 AT+GMR
-Revision:1418B03SIM868M32_BT
+Revision:1418B05SIM868M32_BT
 OK
 AT+GSN
 868183030452648
-OK
-AT+CCLK?
-+CCLK: "04/01/01,05:03:17+02"
 OK
 AT+CGNSPWR=1
 OK
 AT+CGNSPWR?
 +CGNSPWR: 1
 OK
-AT+CSQ
-+CSQ: 0,0
+AT+CCLK?
++CCLK: "04/01/01,03:38:26+02"
 OK
 AT+CREG?
-+CREG: 0,4
++CREG: 0,2
 OK
++CGNSPWR: 1
+AT+CREG?
++CREG: 0,2
+OK
+AT+CREG?
++CREG: 0,2
+OK
+AT+CREG?
++CREG: 0,2
+OK
+AT+CREG?
++CREG: 0,1
+OK
+AT+CSQ
++CSQ: 16,3
+OK
+AT+CGATT?
++CGATT: 0
+OK
+AT+CGATT=1
++CME ERROR: unknown
+AT+CSTT="internet.beeline.ru","beeline","beeline"
+OK
+AT+CGACT=1,1
+OK
+AT+CIICR
+OK
+AT+CIFSR
+10.40.47.9
+
 AT+CGNSINF
-+CGNSINF: 1,0,19800106010708.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
++CGNSINF: 1,0,19800106000343.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
 OK
 ```
 
-05.06.2019 11:23:01 | +CGNSINF: 1,0,19800106010708.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
+06.06.2019 20:17:46 | +CGNSINF: 1,0,19800106000343.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
 
 ```
 {
-    "GpsSeqNum": 205,
+    "InfSeqNum": 12,
     "MsgType": "+CGNSINF",
     "DevID": "868183030452648",
     "DevName": "STM32_SIM868",
-    "DevTime": 4066,
-    "EpochTime": 1559733781,
-    "UTC": "06.01.1980 01:07:08.000",
+    "DevTime": 245,
+    "EpochTime": 1559852266,
+    "UTC": "06.01.1980 00:03:43.000",
     "Run": 1,
     "Status": "Invaid",
     "Latitude": 0.0,
@@ -122,41 +150,28 @@ OK
 }
 ```
 
-05.06.2019 11:20:34 | $GNRMC,010441.869,V,,,,,0.00,0.00,060180,,,N*5B
+06.06.2019 20:22:13 | $GNRMC,000810.869,V,,,,,0.00,0.00,060180,,,N*52
+06.06.2019 20:22:13 | BMP280: Press=758.27 mmHg, Temp=28.13 DegC; BH1750: Lux=5.00 lx
 
 ```
 {
-    "GpsSeqNum": 195,
-    "MsgType": "$GNRMC",
+    "DataSeqNum": 51,
+    "MsgType": "COMBO",
     "DevID": "868183030452648",
     "DevName": "STM32_SIM868",
-    "DevTime": 3919,
-    "EpochTime": 1559733634,
-    "UTC": "06.01.80 01:04:41.869",
+    "DevTime": 512,
+    "EpochTime": 1559852533,
+    "UTC": "06.01.80 00:08:10.869",
     "Status": "Invaid",
     "Latitude": 0.0,
     "Longitude": 0.0,
     "Speed": 0.0,
     "Dir": 0.0,
     "Mode": "N",
-    "CRC": "5B"
-}
-
-```
-
-05.06.2019 11:21:26 | BMP280: Press=758.96 mmHg, Temp=27.46 DegC; BH1750: Lux=36.66 lx
-
-```
-{
-    "SensSeqNum": 263,
-    "MsgType": "SENSOR",
-    "DevID": "868183030452648",
-    "DevName": "STM32_SIM868",
-    "DevTime": 3971,
-    "EpochTime": 1559733686,
-    "Press": 758.966125,
-    "Temp": 27.468406,
-    "Lux": 36.666667
+    "CRC": "52",
+    "Press": 758.274475,
+    "Temp": 28.138278,
+    "Lux": 5.0
 }
 ```
 
