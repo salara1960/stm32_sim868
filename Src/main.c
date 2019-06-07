@@ -65,7 +65,9 @@
 //const char *ver = "ver 2.2rc4";//05.06.2019 - minor changes : add commands SRV:srv_adr:srv_port (for example : SRV:127.0.0.1:9000)
 //const char *ver = "ver 2.2rc5";//05.06.2019 - minor changes : add GPS json_string to GPRS_queue (for sending to tcp_server)
 //const char *ver = "ver 2.2rc6";//05.06.2019 - minor changes : add function  toDisplay(...);
-const char *ver = "ver 2.3rc1";//06.06.2019 - major changes : remove GpsTask, all gps support now moved to AtTask
+//const char *ver = "ver 2.3rc1";//06.06.2019 - major changes : remove GpsTask, all gps support now moved to AtTask
+const char *ver = "ver 2.3rc2";//07.06.2019 - minor changes : add new at commands to 'play_list'
+
 
 /*
 post-build steps command:
@@ -176,27 +178,32 @@ static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
-const uint8_t cmdsMax = 15;//16;//18;//11;//12;
+const uint8_t cmdsMax = 19;//21;
 const char *cmds[] = {
 	"AT\r\n",
-	"AT+CMEE=2\r\n",
+	"AT+CMEE=0\r\n",
 	"AT+GMR\r\n",
-	"AT+GSN\r\n",
-	"AT+CGNSPWR=1\r\n",
-	"AT+CGNSPWR?\r\n",
-	"AT+CCLK?\r\n",
+	"AT+GSN\r\n",//get IMEI
+	"AT+CIMI\r\n",//get IMCI
+	"AT+CMGF=1\r\n",//test mode
+	"AT+CSCS=\"IRA\"\r\n",
+	"AT+CGNSPWR=1\r\n",// power for GPS/GLONASS ON
+	"AT+CGNSPWR?\r\n",//check power for GPS/GLONASS status
+	"AT+CCLK?\r\n",//get date/time
 	"AT+CREG?\r\n",
-	"AT+CSQ\r\n",
-	//"AT+CGDCONT=1,\"IP\",\"internet.beeline.ru\"\r\n",
+	"AT+CSQ\r\n",//get RSSI
+//	"AT+CENG=1\r\n",//Switch on engineering mode
+	"AT+CGDCONT=1,\"IP\",\"internet.beeline.ru\"\r\n",
 	"AT+CGATT?\r\n",
 	"AT+CGATT=1\r\n",
 	"AT+CSTT=\"internet.beeline.ru\",\"beeline\",\"beeline\"\r\n",
 	"AT+CGACT=1,1\r\n",
 	"AT+CIICR\r\n",
 	"AT+CIFSR\r\n"
+//	"AT+CENG?\r\n"
 };
 
-const char *srv_adr_def = "95.30.190.41";
+const char *srv_adr_def = "2.95.69.24";
 const uint16_t srv_port_def = 9090;
 static char srv_adr[64] = {0};
 static uint16_t srv_port;
@@ -214,6 +221,7 @@ osMessageQueueId_t mqData;
 uint32_t dataCounter = 0;
 uint32_t infCounter = 0;
 
+s_gsm_stat gsm_stat = {0};
 
 /* USER CODE END PV */
 
@@ -883,6 +891,7 @@ uint8_t a, b, c, i;
 /**/
 void gsmONOFF(uint32_t twait)
 {
+	flags.gps_log_show = flags.i2c_log_show = flags.combo_log_show = 0;
 	Report(true, "GSM_KEY set to 0 (vio=%u)\r\n", getVIO());
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);//set 0
 	HAL_Delay(twait);
@@ -1207,15 +1216,22 @@ void getNMEA()
 		char *uk = strstr(GpsRxBuf, _extRMC);//const char *_extRMC = "$GNRMC";
 		if (uk) {
 			rmc5++;
+			if (flags.msg_begin) {
+				flags.msg_begin = 0;
+				rmc5 = wait_gps_def;
+				//flags.msg_end = 1;
+			}
 			if (rmc5 >= wait_gps_def) {
-				rmc5 = 0;
-				if (LoopAll) {
-					int len = strlen(GpsRxBuf);
-					char *buff = (char *)calloc(1, len + 1);
-					memcpy(buff, GpsRxBuf, len);
-					int8_t sta = putQ(buff, &q_gps);
-					if (sta < 0) free(buff);//error !
-							else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);//add to q_gps OK
+				if (gprs_stat.next_send) {
+					rmc5 = 0;
+					if (LoopAll) {
+						int len = strlen(GpsRxBuf);
+						char *buff = (char *)calloc(1, len + 1);
+						memcpy(buff, GpsRxBuf, len);
+						int8_t sta = putQ(buff, &q_gps);
+						if (sta < 0) free(buff);//error !
+								else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);//add to q_gps OK
+					}
 				}
 			} else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
 		}
@@ -1292,7 +1308,7 @@ void LogData()
 				} else if (strstr(RxBuf, "OFF:")) {
 					evt_gsm = 2; priz = true;
 				} else if (strstr(RxBuf, "COMBO:")) {
-					flags.combo_show = ~flags.combo_show; priz = true;
+					flags.combo_log_show = ~flags.combo_log_show; priz = true;
 				} else if (strstr(RxBuf, "GPS:")) {
 					flags.gps_log_show = ~flags.gps_log_show; priz = true;
 				} else if (strstr(RxBuf, "I2C:")) {
@@ -1754,7 +1770,7 @@ void StartDefTask(void *argument)
   		if (getQ(msgNMEA, &q_gps) >= 0) {
   			if (flags.gps_log_show) Report(true, msgNMEA);
   			if (!parse_gps(msgNMEA, &one)) {
-  				flags.sens_begin = 1;
+  				flags.msg_end = 1;
   				memcpy((uint8_t *)&allData.rmc, (uint8_t *)&one, sizeof(s_gps_t));
   				new |= 2;
   			} else if (!parse_inf(msgNMEA, &inf)) {
@@ -1869,7 +1885,7 @@ void StartSensTask(void *argument)
 
   /* Infinite loop */
 
-	flags.sens_begin = 0;
+	flags.msg_end = 0;
 
 	uint32_t wait_sensor = get_tmr(wait_sensor_def);
 
@@ -1877,9 +1893,8 @@ void StartSensTask(void *argument)
 
 	while (LoopAll) {
 
-		if (gprs_stat.sens_reset || flags.sens_begin) {
-			if (gprs_stat.sens_reset) gprs_stat.sens_reset = 0;
-			if (flags.sens_begin) flags.sens_begin = 0;
+		if (flags.msg_end) {
+			flags.msg_end = 0;
 			wait_sensor = 0;
 		}
 
@@ -1941,12 +1956,6 @@ void StartAtTask(void *argument)
 {
   /* USER CODE BEGIN StartAtTask */
 
-	//#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-	//		  sprintf(toScr, "msgQ:%u", deepQ(&q_gprs));
-	//		  toDisplay((const char *)toScr, 4, false);
-	//#endif
-
-
 	AtParamInit(0);
 	HAL_Delay(1000);
 	uint32_t tmps = 1250;
@@ -1959,7 +1968,6 @@ void StartAtTask(void *argument)
 	uint32_t wait_ack = 0;
 	uint64_t new_cmds = 0, min_ms = 1, max_ms = 12, tms;
 	flags.imei_flag = 0;
-	flags.combo_show = 0;
 	char *uk = NULL;
 	uint8_t cnt = 0, max_repeat = 6;
 	bool repeat = false;
@@ -1967,10 +1975,11 @@ void StartAtTask(void *argument)
 	gprs_stat.connect = gprs_stat.init = 0;
 	gprs_stat.try_connect = gprs_stat.prompt = 0;
 	gprs_stat.try_send = gprs_stat.cgatt_on = 0;
-	gprs_stat.send_ok = 1;
+	gprs_stat.send_ok = gprs_stat.next_send = 1;
 	bool yes = false;
 	msgGPRS[0] = 0;
 	char cmd[80];
+	int dl;
 
 	char toScr[SCREEN_SIZE];
 
@@ -1988,7 +1997,6 @@ void StartAtTask(void *argument)
 
 			if (strstr(msgAT, "NORMAL POWER DOWN")) {
 				onGSM = false;
-				flags.gps_log_show = flags.i2c_log_show = 0;
 				gprs_stat.init = gprs_stat.connect = 0;
 				if (!wait_ack) wait_ack = get_tmr(2);
 			} else if (strlen(msgAT)) {
@@ -2026,6 +2034,15 @@ void StartAtTask(void *argument)
 				else if (strstr(msgAT, "+CPIN: READY")) counter++;
 				else if (strstr(msgAT, "Call Ready")) counter++;
 				else if (strstr(msgAT, "SMS Ready")) counter = 5;
+				else if ((uki = strstr(msgAT, "+CSQ: ")) != NULL) {//+CSQ: 15,0
+					uki += 6;
+					if ((uk = strchr(uki, ',')) != NULL) {
+						dl = uk - uki; if (dl > 2) dl = 2;
+						memcpy(cmd, uki, dl);
+						cmd[dl] = 0;
+						gsm_stat.rssi = atoi(cmd);
+					}
+				}
 				else if ((uki = strstr(msgAT, "+CGNSPWR: ")) != NULL) {
 					if (*(uki + 10) == '1') onGNS = true;
 									   else onGNS = false;
@@ -2037,10 +2054,12 @@ void StartAtTask(void *argument)
 								strstr(msgAT, "CLOSE") ||
 									strchr(msgAT, '>') ||
 										strstr(msgAT, "+BTSCAN: 1")) {
-						if (strstr(msgAT, "SEND OK")) gprs_stat.send_ok = 1;
-						else if ((strstr(msgAT, "CLOSE") || strstr(msgAT, "ERROR")) && gprs_stat.connect) {
-							gprs_stat.connect = 0;
+						if (strstr(msgAT, "SEND OK")) {
 							gprs_stat.send_ok = 1;
+							gprs_stat.next_send = 1;
+						} else if ((strstr(msgAT, "CLOSE") || strstr(msgAT, "ERROR")) && gprs_stat.connect) {
+							gprs_stat.connect = 0;
+							gprs_stat.send_ok = gprs_stat.next_send = 1;
 							Report(true, "--- DISCONNECTED ---\r\n");
 							if (gprs_stat.try_disconnect) gprs_stat.try_disconnect = 0;
 						}
@@ -2051,7 +2070,7 @@ void StartAtTask(void *argument)
 								gprs_stat.send_ok = 1;
 								Report(true, "+++ CONNECTED +++\r\n");
 								gprs_stat.try_connect = 0;
-								gprs_stat.sens_reset = 1;
+								flags.msg_begin = 1;
 							}
 						}
 
@@ -2085,8 +2104,7 @@ void StartAtTask(void *argument)
 		if (cmdsInd >= 0) {
 			if (cmdsInd >= cmdsMax) {
 				cmdsInd = -1;
-				flags.gps_log_show = flags.i2c_log_show = 1;
-				flags.combo_show = 1;
+				flags.gps_log_show = flags.i2c_log_show = flags.combo_log_show = 1;
 			} else {
 				if (cmdsDone) {
 					if (check_hstmr(new_cmds)) {
@@ -2113,7 +2131,7 @@ void StartAtTask(void *argument)
   			Report(true, "NEW SERVER : %s:%u\r\n", srv_adr, srv_port);
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 			sprintf(toScr, "%s", srv_adr);
-			toDisplay((const char *)toScr, 2, false);
+			toDisplay((const char *)toScr, 2, true);
 #endif
   		}
 
@@ -2150,19 +2168,18 @@ void StartAtTask(void *argument)
 						sprintf(cmd, "AT+CIPSEND=%d\r\n", strlen(msgGPRS));
 						yes = true;
 						buff = cmd;
+						gprs_stat.next_send = 0;
 					} else {
-						if (flags.combo_show) Report(true, "%s", msgGPRS);
+						if (flags.combo_log_show) Report(true, "%s", msgGPRS);
 					}
 				}
 			}
 		//}
 
-		if (gprs_stat.prompt) {
-			//if (cmdsDone) {
-				yes = true;
-				buff = msgGPRS;
-				gprs_stat.prompt = 0;
-			//}
+		if (gprs_stat.prompt && gprs_stat.connect) {
+			yes = true;
+			buff = msgGPRS;
+			gprs_stat.prompt = 0;
 		}
 
 		if (yes) {
@@ -2177,9 +2194,11 @@ void StartAtTask(void *argument)
 				if (HAL_UART_GetState(portAT) == HAL_UART_STATE_BUSY_RX) break;
 				osDelay(1);
 			}
-			cmdsDone = false;
-			if ( (strstr(buff, "AT+BTSPPSEND=")) || (strstr(buff, "AT+COPS")) )	wait_ack = get_tmr(45);//WAIT ACK 30 SEC
-										  	  	  	  	  	  	  	  	   else wait_ack = get_tmr(30);
+			cmdsDone = false;//AT+CIICR
+			if ( (strstr(buff, "AT+BTSPPSEND=")) ||
+					(strstr(buff, "AT+COPS")) ||
+						(strstr(buff, "AT+CIICR")) ) wait_ack = get_tmr(45);//WAIT ACK 45 SEC
+										  	  	else wait_ack = get_tmr(30);
 			if (strstr(buff, "AT+GSN")) flags.imei_flag = 1;
 			if (strstr(buff, "AT+CIFSR")) flags.local_ip_flag = 1;
 
@@ -2206,7 +2225,6 @@ void StartAtTask(void *argument)
 			if (evt_gsm == 2) tmps = 1850; else tmps = 1250;
 			evt_gsm = 0;
 			AtParamInit(0);
-			flags.gps_log_show = flags.i2c_log_show = 0;
 			gsmONOFF(tmps);
 			gprs_stat.init = gprs_stat.connect = 0;
 		}
@@ -2216,9 +2234,12 @@ void StartAtTask(void *argument)
 			Report(true, "GSM VIO is %u\r\n", getVIO());
 		}
 
+#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+		sprintf(toScr, "RSSI : -%u dBm", gsm_stat.rssi);
+		toDisplay((const char *)toScr, 4, true);
+#endif
 
-
-		osDelay(10);
+		osDelay(25);
 
 	}
 
@@ -2277,9 +2298,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 #endif
 		  //------------------------------------------------------------------------------------------
 		  if (HAL_GPIO_ReadPin(USER_IN_GPIO_Port, USER_IN_Pin) == GPIO_PIN_SET) {//user key is pressed
-			  if (!flags.stop) {
-				  flags.stop = 1;
-			  }
+			  if (!flags.stop) flags.stop = 1;
 		  }
 		  //------------------------------------------------------------------------------------------
 		  //if (OnOffEn) {

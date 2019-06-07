@@ -96,13 +96,14 @@ typedef struct {
 	unsigned prompt:1;
 	unsigned try_send:1;
 	unsigned cgatt_on:1;
-	unsigned sens_reset:1;
 	unsigned send_ok:1;
+	unsigned next_send:1;
 } s_gprs_stat;
 
 typedef struct {
 	unsigned gps_log_show:1;
 	unsigned i2c_log_show:1;
+	unsigned combo_log_show:1;
 	unsigned restart:1;
 	unsigned stop:1;
 	unsigned imei_flag:1;
@@ -111,8 +112,8 @@ typedef struct {
 	unsigned connect:1;
 	unsigned disconnect:1;
 	unsigned srv:1;
-	unsigned combo_show:1;
-	unsigned sens_begin:1;
+	unsigned msg_begin:1;
+	unsigned msg_end:1;
 } s_flags;
 
 //$--RMC,hhmmss.sss,x,llll.lll,a,yyyyy.yyy,a,x.x,u.u,xxxxxx,,,v*hh<CR><LF>
@@ -175,6 +176,10 @@ typedef struct {
 	result_t sens;
 	s_gps_t rmc;
 } s_data_t;//allData;
+
+typedef struct {
+	uint8_t rssi;
+} s_gsm_stat;
 #pragma pack(pop)
 
 
@@ -204,7 +209,7 @@ SPI_HandleTypeDef *portSPI;
 /* USER CODE BEGIN EM */
 
 
-#define wait_sensor_def 12
+#define wait_sensor_def 17
 #define wait_gps_def wait_sensor_def - 2 //>> 1
 #define MAX_UART_BUF 640//512//480//400//384//256
 
