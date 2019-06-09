@@ -52,12 +52,8 @@
   в USART3, например :
 
 ```
-22.05.2019 14:54:54 | [gsmONOFF] GSM_KEY set to 0
-22.05.2019 14:54:55 | [gsmONOFF] GSM_KEY set to 1
-NORMAL POWER DOWN
-22.05.2019 14:54:58 | [gsmONOFF] GSM_KEY set to 0
-22.05.2019 14:54:59 | [gsmONOFF] GSM_KEY set to 1
-
+000.00:00:02 | GSM_KEY set to 0 (vio=0)
+000.00:00:04 | GSM_KEY set to 1 (vio=1)
 RDY
 +CFUN: 1
 +CPIN: READY
@@ -65,7 +61,7 @@ Call Ready
 SMS Ready
 AT
 OK
-AT+CMEE=2
+AT+CMEE=0
 OK
 AT+GMR
 Revision:1418B05SIM868M32_BT
@@ -73,20 +69,21 @@ OK
 AT+GSN
 868183030452648
 OK
+AT+CIMI
+250992116842498
+OK
+AT+CMGF=1
+OK
+AT+CSCS="IRA"
+OK
 AT+CGNSPWR=1
 OK
 AT+CGNSPWR?
 +CGNSPWR: 1
 OK
-AT+CCLK?
-+CCLK: "04/01/01,03:38:26+02"
-OK
-AT+CREG?
-+CREG: 0,2
-OK
 +CGNSPWR: 1
-AT+CREG?
-+CREG: 0,2
+AT+CCLK?
++CCLK: "04/01/01,00:57:25+02"
 OK
 AT+CREG?
 +CREG: 0,2
@@ -98,13 +95,13 @@ AT+CREG?
 +CREG: 0,1
 OK
 AT+CSQ
-+CSQ: 16,3
++CSQ: 18,0
+OK
+AT+CGDCONT=1,"IP","internet.beeline.ru"
 OK
 AT+CGATT?
-+CGATT: 0
++CGATT: 1
 OK
-AT+CGATT=1
-+CME ERROR: unknown
 AT+CSTT="internet.beeline.ru","beeline","beeline"
 OK
 AT+CGACT=1,1
@@ -112,24 +109,54 @@ OK
 AT+CIICR
 OK
 AT+CIFSR
-10.40.47.9
+10.90.103.150
+
+CON:
+AT+CIPSTART="TCP","37.146.233.188",9090
+OK
+000.00:00:31 | +++ CONNECTED +++
+CONNECT OK
+000.00:00:31 | $GNRMC,000009.868,V,,,,,0.00,0.00,060180,,,N*53
+000.00:00:31 | BMP280: Press=767.41 mmHg, Temp=26.11 DegC; BH1750: Lux=49.16 lx
+AT+CIPSEND=389
+>{
+    "DataSeqNum": 1,
+    "MsgType": "COMBO",
+    "DevID": "868183030452648",
+    "DevName": "STM32_SIM868",
+    "DevTime": 31,
+    "UTC": "06.01.80 00:00:09.868",
+    "Status": "Invaid",
+    "Latitude": 0.0,
+    "Longitude": 0.0,
+    "Speed": 0.0,
+    "Dir": 0.0,
+    "Mode": "N",
+    "CRC": "53",
+    "Press": 767.416748,
+    "Temp": 26.118133,
+    "Lux": 49.166667
+}
+
+SEND OK
+{"PackNumber":1,"DataSeqNum":1}
+```
 
 AT+CGNSINF
-+CGNSINF: 1,0,19800106000343.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
+
++CGNSINF: 1,0,19800106000405.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
+
 OK
-```
-
-06.06.2019 20:17:46 | +CGNSINF: 1,0,19800106000343.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
 
 ```
+000.00:04:28 | +CGNSINF: 1,0,19800106000405.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
 {
-    "InfSeqNum": 12,
+    "InfSeqNum": 1,
     "MsgType": "+CGNSINF",
     "DevID": "868183030452648",
     "DevName": "STM32_SIM868",
-    "DevTime": 245,
-    "EpochTime": 1559852266,
-    "UTC": "06.01.1980 00:03:43.000",
+    "DevTime": 268,
+    "UTC": "06.01.1980 00:04:05.000",
     "Run": 1,
     "Status": "Invaid",
     "Latitude": 0.0,
@@ -150,33 +177,7 @@ OK
 }
 ```
 
-06.06.2019 20:22:13 | $GNRMC,000810.869,V,,,,,0.00,0.00,060180,,,N*52
-
-06.06.2019 20:22:13 | BMP280: Press=758.27 mmHg, Temp=28.13 DegC; BH1750: Lux=5.00 lx
-
-```
-{
-    "DataSeqNum": 51,
-    "MsgType": "COMBO",
-    "DevID": "868183030452648",
-    "DevName": "STM32_SIM868",
-    "DevTime": 512,
-    "EpochTime": 1559852533,
-    "UTC": "06.01.80 00:08:10.869",
-    "Status": "Invaid",
-    "Latitude": 0.0,
-    "Longitude": 0.0,
-    "Speed": 0.0,
-    "Dir": 0.0,
-    "Mode": "N",
-    "CRC": "52",
-    "Press": 758.274475,
-    "Temp": 28.138278,
-    "Lux": 5.0
-}
-```
-
-  Эти же данные (время работы, напряжение питания, атмосферное давление, температура воздуха и освещенность)
+  Часть этих данные (время работы, адрес сервера и состояние соединения, атмосферное давление, температура воздуха и освещенность)
 отображаются на дисплей ssd1306.
 
 * Через usart3 можно отправлять команды на модуль SIM868, например :
