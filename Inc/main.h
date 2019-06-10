@@ -134,8 +134,8 @@ typedef struct {
 	uint8_t day;	//xx - 06
 	uint8_t mon;	//xx - 01
 	uint8_t year;	//xx - 80
-	char mode;		//v = ‘N’ = Data not valid, ‘A’ = Autonomous mode, ‘D’ = Differential mode, ‘E’ = Estimated (dead reckoning) mode
-	uint8_t crc;
+//	char mode;		//v = ‘N’ = Data not valid, ‘A’ = Autonomous mode, ‘D’ = Differential mode, ‘E’ = Estimated (dead reckoning) mode
+//	uint8_t crc;
 } s_gps_t;
 
 typedef struct {
@@ -175,6 +175,7 @@ typedef struct {
 typedef struct {
 	result_t sens;
 	s_gps_t rmc;
+	//s_inf_t inf;
 } s_data_t;//allData;
 
 typedef struct {

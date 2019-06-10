@@ -67,7 +67,8 @@
 //const char *ver = "ver 2.2rc6";//05.06.2019 - minor changes : add function  toDisplay(...);
 //const char *ver = "ver 2.3rc1";//06.06.2019 - major changes : remove GpsTask, all gps support now moved to AtTask
 //const char *ver = "ver 2.3rc2";//07.06.2019 - minor changes : add new at commands to 'play_list'
-const char *ver = "ver 2.3rc3";//09.06.2019 - minor changes in toDisplay(...) function
+//const char *ver = "ver 2.3rc3";//09.06.2019 - minor changes in toDisplay(...) function
+const char *ver = "ver 2.3rc4";//10.06.2019 - minor changes+
 
 
 /*
@@ -152,6 +153,8 @@ volatile uint8_t rx_uk;
 uint8_t lRxByte;
 
 static const char *_extRMC = "$GNRMC";
+//static const char *_extGGA = "$GNGGA";
+
 static char GpsRxBuf[MAX_UART_BUF];
 volatile uint8_t gps_rx_uk;
 uint8_t gRxByte;
@@ -195,16 +198,16 @@ const char *cmds[] = {
 	"AT+CSQ\r\n",//get RSSI
 //	"AT+CENG=1\r\n",//Switch on engineering mode
 	"AT+CGDCONT=1,\"IP\",\"internet.beeline.ru\"\r\n",
-	"AT+CGATT?\r\n",
-	"AT+CGATT=1\r\n",
 	"AT+CSTT=\"internet.beeline.ru\",\"beeline\",\"beeline\"\r\n",
 	"AT+CGACT=1,1\r\n",
 	"AT+CIICR\r\n",
+	"AT+CGATT?\r\n",
+	"AT+CGATT=1\r\n",
 	"AT+CIFSR\r\n"
 //	"AT+CENG?\r\n"
 };
 
-const char *srv_adr_def = "37.146.233.188";//"2.95.69.24";
+const char *srv_adr_def = "2.95.135.25";
 const uint16_t srv_port_def = 9090;
 static char srv_adr[64] = {0};
 static uint16_t srv_port;
@@ -1215,6 +1218,7 @@ void getNMEA()
 	GpsRxBuf[gps_rx_uk++] = (char)gRxByte;
 	if (gRxByte == 0x0a) {//end of line
 		char *uk = strstr(GpsRxBuf, _extRMC);//const char *_extRMC = "$GNRMC";
+		//if (!uk) uk = strstr(GpsRxBuf, _extGGA);//const char *_extGGA = "$GNGGA";
 		if (uk) {
 			rmc5++;
 			if (flags.msg_begin) {
@@ -1485,11 +1489,11 @@ int8_t parse_gps(char *in, s_gps_t *data)
 								data->day = atoi(tmp);
 							}
 							break;
-						case 12://mode+crc
-							data->mode = tmp[0];
-							uk = strchr(tmp, '*');
-							if (uk) data->crc = hextobin(*(uk + 1), *(uk + 2));
-							break;
+						//case 12://mode+crc
+						//	data->mode = tmp[0];
+						//	uk = strchr(tmp, '*');
+						//	if (uk) data->crc = hextobin(*(uk + 1), *(uk + 2));
+						//	break;
 					}
 				}
 				uks = uke + 1;
@@ -1635,10 +1639,10 @@ int ret = -1;
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.longitude), "Longitude", 0);
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.speed), "Speed", 0);
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.dir), "Dir", 0);
-        dl = sprintf(stx, "%c", data->rmc.mode);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), "Mode", 0);
-        dl = sprintf(stx, "%02X", data->rmc.crc);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), "CRC", 0);
+        //dl = sprintf(stx, "%c", data->rmc.mode);
+        //jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), "Mode", 0);
+        //dl = sprintf(stx, "%02X", data->rmc.crc);
+        //jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), "CRC", 0);
 
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.pres), "Press", 0);
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.temp), "Temp", 0);
