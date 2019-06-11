@@ -114,6 +114,7 @@ typedef struct {
 	unsigned srv:1;
 	unsigned msg_begin:1;
 	unsigned msg_end:1;
+	unsigned auto_cmd:1;
 } s_flags;
 
 //$--RMC,hhmmss.sss,x,llll.lll,a,yyyyy.yyy,a,x.x,u.u,xxxxxx,,,v*hh<CR><LF>
@@ -210,7 +211,7 @@ SPI_HandleTypeDef *portSPI;
 /* USER CODE BEGIN EM */
 
 
-#define wait_sensor_def 17
+#define wait_sensor_def 32
 #define wait_gps_def wait_sensor_def - 2 //>> 1
 #define MAX_UART_BUF 640//512//480//400//384//256
 

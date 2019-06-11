@@ -68,7 +68,9 @@
 //const char *ver = "ver 2.3rc1";//06.06.2019 - major changes : remove GpsTask, all gps support now moved to AtTask
 //const char *ver = "ver 2.3rc2";//07.06.2019 - minor changes : add new at commands to 'play_list'
 //const char *ver = "ver 2.3rc3";//09.06.2019 - minor changes in toDisplay(...) function
-const char *ver = "ver 2.3rc4";//10.06.2019 - minor changes+
+//const char *ver = "ver 2.3rc4";//10.06.2019 - minor changes+
+//const char *ver = "ver 2.4rc1";//10.06.2019 - minor changes++
+const char *ver = "ver 2.5rc1";//11.06.2019 - major changes in AtTask
 
 
 /*
@@ -1227,7 +1229,7 @@ void getNMEA()
 				//flags.msg_end = 1;
 			}
 			if (rmc5 >= wait_gps_def) {
-				if (gprs_stat.next_send) {
+				if (gprs_stat.next_send && !flags.auto_cmd) {
 					rmc5 = 0;
 					if (LoopAll) {
 						int len = strlen(GpsRxBuf);
@@ -1778,15 +1780,17 @@ void StartDefTask(void *argument)
   		//-------------------------------------------------------------------------
   		//						get from gps_queue
   		//
-  		if (getQ(msgNMEA, &q_gps) >= 0) {
-  			if (flags.gps_log_show) Report(true, msgNMEA);
-  			if (!parse_gps(msgNMEA, &one)) {
-  				flags.msg_end = 1;
-  				memcpy((uint8_t *)&allData.rmc, (uint8_t *)&one, sizeof(s_gps_t));
-  				new |= 2;
-  			} else if (!parse_inf(msgNMEA, &inf)) {
-  				if (!makeINFJsonString(&inf, msgNMEA)) {
-  					if (flags.gps_log_show) Report(false, "%s (size=%d)\r\n", msgNMEA, strlen(msgNMEA));
+  		if (!flags.auto_cmd) {
+  			if (getQ(msgNMEA, &q_gps) >= 0) {
+  				if (flags.gps_log_show) Report(true, msgNMEA);
+  				if (!parse_gps(msgNMEA, &one)) {
+  					flags.msg_end = 1;
+  					memcpy((uint8_t *)&allData.rmc, (uint8_t *)&one, sizeof(s_gps_t));
+  					new |= 2;
+  				} else if (!parse_inf(msgNMEA, &inf)) {
+  					if (!makeINFJsonString(&inf, msgNMEA)) {
+  						if (flags.gps_log_show) Report(false, "%s (size=%d)\r\n", msgNMEA, strlen(msgNMEA));
+  					}
   				}
   			}
   		}
@@ -1835,23 +1839,14 @@ void StartDefTask(void *argument)
   			}
   		}//mailqueuehandle
 
-
-  		//-------------------------------------------------------------------------
-  		if (new == 3) {
-  			new = 0;
-  			if (mqData) osMessageQueuePut(mqData, (void *)&allData, 0, 10);
-  		}
-  		//-------------------------------------------------------------------------
-
-  		osDelay(10);
-
   		//-------------------------------------------------------------------------
   		if (flags.restart) {
   			flags.restart = 0;
   			if (gprs_stat.connect) flags.disconnect = 1;
   			Report(true, "Restart all !\r\n");
-  			osDelay(500);
+  			osDelay(1000);
   			NVIC_SystemReset();
+  			break;
   		}
   		//
   		if (flags.stop) {
@@ -1859,10 +1854,19 @@ void StartDefTask(void *argument)
   			if (gprs_stat.connect) flags.disconnect = 1;
   			sprintf(toScreen, "Stop All");
   			Report(true, "%s!\r\n", toScreen);
-  			osDelay(500);
   			toDisplay((const char *)toScreen, 0, 5, false);
   			LoopAll = false;
+  			break;
   		}
+
+  		//-------------------------------------------------------------------------
+  		if (new == 3) {
+  			new = 0;
+  			osMessageQueuePut(mqData, (void *)&allData, 0, 10);
+  		}
+  		//-------------------------------------------------------------------------
+
+
   	}
 
   	LOOP_FOREVER();
@@ -1909,7 +1913,7 @@ void StartSensTask(void *argument)
 			wait_sensor = 0;
 		}
 
-		if (check_tmr(wait_sensor)) {
+		if (check_tmr(wait_sensor) && !flags.auto_cmd) {
 			wait_sensor = get_tmr(wait_sensor_def);
 			//--------------------  BH1750  ---------------------------------
 			lx = -1.0;
@@ -1967,20 +1971,19 @@ void StartAtTask(void *argument)
 {
   /* USER CODE BEGIN StartAtTask */
 
-	AtParamInit(0);
+	AtParamInit();
 	HAL_Delay(1000);
 	uint32_t tmps = 1250;
 	if (!getVIO()) gsmONOFF(tmps);
 
 	char *uki = msgCMD;
 	const char *buff = NULL;
-	bool cmdsReady = false;
 	uint8_t counter = 0;
 	uint32_t wait_ack = 0;
-	uint64_t new_cmds = 0, min_ms = 1, max_ms = 12, tms;
-	flags.imei_flag = 0;
+	uint64_t new_cmds = 0, min_ms = 1, max_ms = 10, tms;
+	flags.imei_flag = flags.auto_cmd = 0;
 	char *uk = NULL;
-	uint8_t cnt = 0, max_repeat = 6;
+	uint8_t cnt = 0, max_repeat = 8;
 	bool repeat = false;
 
 	gprs_stat.connect = gprs_stat.init = 0;
@@ -2001,74 +2004,200 @@ void StartAtTask(void *argument)
 	toDisplay((const char *)toScr, 0, 2, false);
 #endif
 
+	uint8_t faza = 0, rx_faza = 0;
+
 	/* Infinite loop */
 	while (LoopAll) {
 
-		if (getQ(msgAT, &q_at) >= 0) {
-
-			if (strstr(msgAT, "NORMAL POWER DOWN")) {
-				onGSM = false;
-				gprs_stat.init = gprs_stat.connect = 0;
-				if (!wait_ack) wait_ack = get_tmr(2);
-			} else if (strlen(msgAT)) {
-				onGSM = true;
-				if (flags.local_ip_flag) {
-					flags.local_ip_flag = 0;
-					gprs_stat.init = 1;
-					wait_ack = 0;
-					cmdsDone = true;
+		switch (faza) {
+			case 0:
+				if (flags.auto_cmd) {
 					if (cmdsInd >= 0) {
-						cmdsInd++;
-						new_cmds = get_hstmr(min_ms);
-					}
-				} else if (flags.imei_flag) {
-					flags.imei_flag = 0;
-					if (strlen(msgAT) >= 15) {
-						memset(devID, 0, sizeof(devID));
-						strncpy(devID, msgAT, 15);
-					}
-				} else if (strstr(msgAT, "+CREG:")) {//+CREG: 0,2
-					cnt++;
-					if (cnt < max_repeat) {
-						if ((uk = strchr(msgAT, ',')) != NULL) {
-							if (*(uk + 1) != '1') repeat = true;
-											 else repeat = false;
+						if (cmdsInd >= cmdsMax) {
+							cmdsInd = -1;
+							flags.auto_cmd = 0;
+							flags.gps_log_show = flags.i2c_log_show = flags.combo_log_show = 1;
+						} else {
+							if (cmdsDone) {
+								if (check_hstmr(new_cmds)) {
+									buff = &cmds[cmdsInd][0];
+									Report(false, "%.*s", strlen(cmds[cmdsInd]), cmds[cmdsInd]);
+									faza = 1;
+								}
+							}
 						}
-					} else {
-						cnt = 0;
-						repeat = false;
 					}
-					if (repeat) tms = max_ms;
-				} else if (strstr(msgAT, "RDY")) counter++;
-				else if (strstr(msgAT, "+CFUN:")) counter++;
-				else if (strstr(msgAT, "+CPIN: NOT INSERTED")) counter = 5;
-				else if (strstr(msgAT, "+CPIN: READY")) counter++;
-				else if (strstr(msgAT, "Call Ready")) counter++;
-				else if (strstr(msgAT, "SMS Ready")) counter = 5;
-				else if ((uki = strstr(msgAT, "+CSQ: ")) != NULL) {//+CSQ: 15,0
-					uki += 6;
-					if ((uk = strchr(uki, ',')) != NULL) {
-						dl = uk - uki; if (dl > 2) dl = 2;
-						memcpy(cmd, uki, dl);
-						cmd[dl] = 0;
-						gsm_stat.rssi = atoi(cmd);
-#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-						sprintf(toScr, "RSSI : -%u dBm  ", gsm_stat.rssi);
-						toDisplay((const char *)toScr, 1, 5, true);
-#endif
+				} else {
+					if (cmdsDone && !flags.auto_cmd) {
+						if (getQ(msgCMD, &q_cmd) >= 0) {//send at command to sim868
+							buff = msgCMD;
+							//Report(false, msgCMD);
+							faza = 1;
+						} else faza = 3;
 					}
 				}
-				else if ((uki = strstr(msgAT, "+CGNSPWR: ")) != NULL) {
-					if (*(uki + 10) == '1') onGNS = true;
-									   else onGNS = false;
-				} else if ((uki = strstr(msgAT, "+CGATT: ")) != NULL) {
-					if (*(uki + 8) == '1') gprs_stat.cgatt_on = 1;
-									  else gprs_stat.cgatt_on = 0;
-				} else if (strstr(msgAT, "ERROR") ||
-							strstr(msgAT, "OK") ||
-								strstr(msgAT, "CLOSE") ||
-									strchr(msgAT, '>') ||
-										strstr(msgAT, "+BTSCAN: 1")) {
+			break;
+			case 1:
+				HAL_UART_Transmit_DMA(portAT, (uint8_t *)buff, strlen(buff));
+				while (HAL_UART_GetState(portAT) != HAL_UART_STATE_READY) {
+					if (HAL_UART_GetState(portAT) == HAL_UART_STATE_BUSY_RX) break;
+					osDelay(1);
+				}
+				cmdsDone = false;
+				if ( (strstr(buff, "AT+BTSPPSEND=")) ||
+							(strstr(buff, "AT+COPS")) ||
+								(strstr(buff, "AT+CIICR")) ) wait_ack = get_tmr(45);//WAIT ACK 45 SEC
+														else wait_ack = get_tmr(30);
+				if (strstr(buff, "AT+GSN")) flags.imei_flag = 1;
+				if (strstr(buff, "AT+CIFSR")) flags.local_ip_flag = 1;
+				if (cmdsInd == -1) wait_ack = 0;
+				if (strstr(buff, "AT+CIPSEND=")) gprs_stat.send_ok = 0;
+				faza = 2;
+			break;
+			case 2:
+				if (wait_ack) {
+					if (check_tmr(wait_ack)) {
+						wait_ack = 0;
+						cmdsDone = true;
+						if (getVIO()) {
+							if (cmdsInd >= 0) {
+								cmdsInd++;
+								if (cmdsInd >= cmdsMax) cmdsInd = -1;
+												   else new_cmds = get_hstmr(min_ms);//250 ms
+							} else evt_gsm = 2;//OFF
+						} evt_gsm = 1;//ON
+					}
+				}
+				if (evt_gsm || flags.auto_cmd) faza = 0;
+										  else faza = 3;
+			break;
+			case 3:
+				yes = false;
+				if (flags.connect) {
+					if (cmdsDone) {
+						flags.connect = 0;
+						if (!gprs_stat.connect) {
+							yes = true;
+							sprintf(cmd, "AT+CIPSTART=\"TCP\",\"%s\",%u\r\n", srv_adr, srv_port);
+							buff = cmd;
+							gprs_stat.try_connect = 1;
+							//Report(true, "+++ Try_connect +++\r\n");
+						}
+					}
+				}
+				if (flags.disconnect) {
+					if (cmdsDone) {
+						flags.disconnect = 0;
+						if (gprs_stat.connect) {
+							yes = true;
+							buff = gprsDISCONNECT;//"AT+CIPCLOSE\r\n"
+							gprs_stat.try_disconnect = 1;
+							//Report(true, "--- Try_disconnect ---\r\n");
+						}
+					}
+				}
+				if (osMessageQueueGet(mqData, (void *)&allData, NULL, 10) == osOK) {
+					if (!makeDataJsonString(&allData, msgGPRS)) {//make json string
+						strcat(msgGPRS, "\r\n");
+						if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
+							sprintf(cmd, "AT+CIPSEND=%d\r\n", strlen(msgGPRS));
+							yes = true;
+							buff = cmd;
+							gprs_stat.next_send = 0;
+						} else {
+							if (flags.combo_log_show) Report(true, "%s", msgGPRS);
+						}
+					}
+				}
+				if (gprs_stat.prompt && gprs_stat.connect) {
+					yes = true;
+					buff = msgGPRS;
+					gprs_stat.prompt = 0;
+				}
+				if (yes) {
+					Report(false, "%s", buff);
+					faza = 1;
+					break;
+				}
+				faza = 0;
+			break;
+			case 4:
+				if (check_tmr(wait_ack)) {
+					wait_ack = 0;
+					faza = 0;
+					evt_gsm = 1;//ON
+				}
+			break;
+
+		}
+
+		//-----------------------------------------------------------------------------------
+		//							rx_data_from_module
+		//
+		switch (rx_faza) {
+			case 0:
+				if (getQ(msgAT, &q_at) < 0) break;
+				if (strstr(msgAT, "NORMAL POWER DOWN")) {
+					onGSM = false;
+					gprs_stat.init = gprs_stat.connect = 0;
+					wait_ack = get_tmr(4);
+					faza = 4;
+				} else if (strlen(msgAT)) {
+					onGSM = true;
+					if (flags.local_ip_flag) {
+						flags.local_ip_flag = 0;
+						gprs_stat.init = 1;
+						wait_ack = 0;
+						cmdsDone = true;
+						if (cmdsInd >= 0) {
+							cmdsInd++;
+							new_cmds = get_hstmr(min_ms);
+						}
+					} else if (flags.imei_flag) {
+						flags.imei_flag = 0;
+						if (strlen(msgAT) >= 15) {
+							memset(devID, 0, sizeof(devID));
+							strncpy(devID, msgAT, 15);
+						}
+					} else if (strstr(msgAT, "+CREG:")) {//+CREG: 0,2
+						cnt++;
+						if (cnt < max_repeat) {
+							if ((uk = strchr(msgAT, ',')) != NULL) {
+								if (*(uk + 1) != '1') repeat = true;
+												 else repeat = false;
+							}
+						} else {
+							cnt = 0;
+							repeat = false;
+						}
+						if (repeat) tms = max_ms;
+					} else if (strstr(msgAT, "RDY")) counter++;
+					else if (strstr(msgAT, "+CFUN:")) counter++;
+					else if (strstr(msgAT, "+CPIN: NOT INSERTED")) counter = 5;
+					else if (strstr(msgAT, "+CPIN: READY")) counter++;
+					else if (strstr(msgAT, "Call Ready")) counter++;
+					else if (strstr(msgAT, "SMS Ready")) counter = 5;
+					else if ((uki = strstr(msgAT, "+CSQ: ")) != NULL) {//+CSQ: 15,0
+						uki += 6;
+						if ((uk = strchr(uki, ',')) != NULL) {
+							dl = uk - uki; if (dl > 2) dl = 2;
+							memcpy(cmd, uki, dl);
+							cmd[dl] = 0;
+							gsm_stat.rssi = atoi(cmd);
+#if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+							sprintf(toScr, "RSSI : -%u dBm  ", gsm_stat.rssi);
+							toDisplay((const char *)toScr, 1, 5, true);
+#endif
+						}
+					}
+					else if ((uki = strstr(msgAT, "+CGNSPWR: ")) != NULL) {
+						if (*(uki + 10) == '1') onGNS = true;
+										   else onGNS = false;
+					} else if ((uki = strstr(msgAT, "+CGATT: ")) != NULL) {
+						if (*(uki + 8) == '1') gprs_stat.cgatt_on = 1;
+						else gprs_stat.cgatt_on = 0;
+					} else if (strstr(msgAT, "ERROR") || strstr(msgAT, "OK") ||
+							strstr(msgAT, "CLOSE") || strchr(msgAT, '>') || strstr(msgAT, "+BTSCAN: 1")) {
 						if (strstr(msgAT, "SEND OK")) {
 							gprs_stat.send_ok = 1;
 							gprs_stat.next_send = 1;
@@ -2089,7 +2218,6 @@ void StartAtTask(void *argument)
 							}
 						}
 
-
 						wait_ack = 0;
 						cmdsDone = true;
 						if (cmdsInd >= 0) {
@@ -2103,145 +2231,39 @@ void StartAtTask(void *argument)
 							}
 							new_cmds = get_hstmr(tms);
 						}
-				}//"ERROR" || "OK" || "CLOSE" || '>' || "+BTSCAN: 1" -> next cmd enable (cmdsDone = true; wait_ack = 0;)
-
-			}
-			if (counter >= 5) {
-				counter = 0;
-				cmdsInd = 0;
-				cmdsDone = true;
-				new_cmds = get_hstmr(min_ms);
-			}
-			Report(false, msgAT);
-
-		}
-
-		if (cmdsInd >= 0) {
-			if (cmdsInd >= cmdsMax) {
-				cmdsInd = -1;
-				flags.gps_log_show = flags.i2c_log_show = flags.combo_log_show = 1;
-			} else {
-				if (cmdsDone) {
-					if (check_hstmr(new_cmds)) {
-						cmdsReady = true;
-						buff = &cmds[cmdsInd][0];
-						Report(false, "%.*s", strlen(cmds[cmdsInd]), cmds[cmdsInd]);
-					}
+					}//"ERROR" || "OK" || "CLOSE" || '>' || "+BTSCAN: 1" -> next cmd enable (cmdsDone = true; wait_ack = 0;)
 				}
-			}
+
+				Report(false, msgAT);
+
+				if (counter >= 5) {
+					counter = 0;
+					cmdsInd = 0;
+					cmdsDone = true;
+					new_cmds = get_hstmr(min_ms);
+					flags.auto_cmd = 1;
+				}
+			break;
 		}
 
-		if (cmdsDone) {
-			if (getQ(msgCMD, &q_cmd) >= 0) {//send at command to sim868
-				cmdsReady = true;
-				buff = msgCMD;
-				//Report(false, msgCMD);
-			}
+		//---------------------------------------------------------------------------
+
+		if (evt_gsm) {
+			if (evt_gsm == 2) tmps = 1850;//module OFF
+						 else tmps = 1250;//module ON
+			evt_gsm = 0;
+			AtParamInit();
+			gsmONOFF(tmps);
+			gprs_stat.init = gprs_stat.connect = 0;
 		}
 
-		//-----------------------------------------
-
-  		if (flags.srv) {
-  			flags.srv = 0;
-  			Report(true, "NEW SERVER : %s:%u\r\n", srv_adr, srv_port);
+		if (flags.srv) {
+			flags.srv = 0;
+			Report(true, "NEW SERVER : %s:%u\r\n", srv_adr, srv_port);
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 			sprintf(toScr, "%s", srv_adr);
 			toDisplay((const char *)toScr, 0, 2, true);
 #endif
-  		}
-
-		yes = false;
-		if (flags.connect) {
-			if (cmdsDone) {
-				flags.connect = 0;
-				if (!gprs_stat.connect) {
-					yes = true;
-					sprintf(cmd, "AT+CIPSTART=\"TCP\",\"%s\",%u\r\n", srv_adr, srv_port);
-					buff = cmd;
-					gprs_stat.try_connect = 1;
-					//Report(true, "+++ Try_connect +++\r\n");
-				}
-			}
-		}
-		if (flags.disconnect) {
-			if (cmdsDone) {
-				flags.disconnect = 0;
-				if (gprs_stat.connect) {
-					yes = true;
-					buff = gprsDISCONNECT;//"AT+CIPCLOSE\r\n"
-					gprs_stat.try_disconnect = 1;
-					//Report(true, "--- Try_disconnect ---\r\n");
-				}
-			}
-		}
-
-		//if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
-			if (osMessageQueueGet(mqData, (void *)&allData, NULL, 10) == osOK) {
-				if (!makeDataJsonString(&allData, msgGPRS)) {//make json string
-					strcat(msgGPRS, "\r\n");
-					if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
-						sprintf(cmd, "AT+CIPSEND=%d\r\n", strlen(msgGPRS));
-						yes = true;
-						buff = cmd;
-						gprs_stat.next_send = 0;
-					} else {
-						if (flags.combo_log_show) Report(true, "%s", msgGPRS);
-					}
-				}
-			}
-		//}
-
-		if (gprs_stat.prompt && gprs_stat.connect) {
-			yes = true;
-			buff = msgGPRS;
-			gprs_stat.prompt = 0;
-		}
-
-		if (yes) {
-			cmdsReady = true;
-			Report(false, "%s", buff);
-		}
-		//-----------------------------------------
-		if (cmdsReady && cmdsDone) {
-			cmdsReady = false;
-			HAL_UART_Transmit_DMA(portAT, (uint8_t *)buff, strlen(buff));
-			while (HAL_UART_GetState(portAT) != HAL_UART_STATE_READY) {
-				if (HAL_UART_GetState(portAT) == HAL_UART_STATE_BUSY_RX) break;
-				osDelay(1);
-			}
-			cmdsDone = false;//AT+CIICR
-			if ( (strstr(buff, "AT+BTSPPSEND=")) ||
-					(strstr(buff, "AT+COPS")) ||
-						(strstr(buff, "AT+CIICR")) ) wait_ack = get_tmr(45);//WAIT ACK 45 SEC
-										  	  	else wait_ack = get_tmr(30);
-			if (strstr(buff, "AT+GSN")) flags.imei_flag = 1;
-			if (strstr(buff, "AT+CIFSR")) flags.local_ip_flag = 1;
-
-			if (cmdsInd == -1) wait_ack = 0;
-
-			if (strstr(buff, "AT+CIPSEND=")) gprs_stat.send_ok = 0;
-		}
-
-		if (wait_ack) {
-			if (check_tmr(wait_ack)) {
-				wait_ack = 0;
-				cmdsDone = true;
-				if (getVIO()) {
-					if (cmdsInd >= 0) {
-						cmdsInd++;
-						if (cmdsInd >= cmdsMax) cmdsInd = -1;
-										   else new_cmds = get_hstmr(min_ms);//250 ms
-					} else evt_gsm = 2;//OFF
-				} evt_gsm = 1;//ON
-			}
-		}
-
-		if (evt_gsm) {
-			if (evt_gsm == 2) tmps = 1850; else tmps = 1250;
-			evt_gsm = 0;
-			AtParamInit(0);
-			gsmONOFF(tmps);
-			gprs_stat.init = gprs_stat.connect = 0;
 		}
 
 		if (flags.vio) {
@@ -2249,7 +2271,7 @@ void StartAtTask(void *argument)
 			Report(true, "GSM VIO is %u\r\n", getVIO());
 		}
 
-		osDelay(10);
+		osDelay(2);
 
 	}
 
