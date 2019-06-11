@@ -70,7 +70,8 @@
 //const char *ver = "ver 2.3rc3";//09.06.2019 - minor changes in toDisplay(...) function
 //const char *ver = "ver 2.3rc4";//10.06.2019 - minor changes+
 //const char *ver = "ver 2.4rc1";//10.06.2019 - minor changes++
-const char *ver = "ver 2.5rc1";//11.06.2019 - major changes in AtTask
+//const char *ver = "ver 2.5rc1";//11.06.2019 - major changes in AtTask
+const char *ver = "ver 2.5rc2";//11.06.2019 - minor changes+ in AtTask
 
 
 /*
@@ -209,8 +210,8 @@ const char *cmds[] = {
 //	"AT+CENG?\r\n"
 };
 
-const char *srv_adr_def = "2.95.135.25";
-const uint16_t srv_port_def = 9090;
+const char *srv_adr_def = "127.0.0.1";
+const uint16_t srv_port_def = 9192;
 static char srv_adr[64] = {0};
 static uint16_t srv_port;
 const char *gprsDISCONNECT = "AT+CIPCLOSE\r\n";
@@ -228,6 +229,8 @@ uint32_t dataCounter = 0;
 uint32_t infCounter = 0;
 
 s_gsm_stat gsm_stat = {0};
+
+const char *gpsINF = "AT+CGNSINF\r\n";
 
 /* USER CODE END PV */
 
@@ -1300,7 +1303,13 @@ void LogData()
 			} else setDate = true;
 			evt_clear = true;
 		} else {
-				if ((uk = strstr(RxBuf, "SRV:")) != NULL) {
+				if (strstr(RxBuf, "INF:")) {
+					//strcpy(RxBuf, "AT+CGNSINF");
+					flags.inf = 1; priz = 1;
+				} else if (strstr(RxBuf, "GET:")) {
+					flags.msg_begin = 1;
+					priz = true;
+				} else if ((uk = strstr(RxBuf, "SRV:")) != NULL) {
 					getAdrPort(uk + 4);
 					*(uk + 4) = 0;
 					flags.srv = 1; priz = true;
@@ -1334,6 +1343,7 @@ void LogData()
 				} else  if (strstr(RxBuf, "STOP:")) {
 					flags.stop = 1;
 				} else {
+
 					if (strstr(RxBuf, "AT")) {
 						strcat(RxBuf, "\n"); priz = true;
 					} else {
@@ -1981,7 +1991,7 @@ void StartAtTask(void *argument)
 	uint8_t counter = 0;
 	uint32_t wait_ack = 0;
 	uint64_t new_cmds = 0, min_ms = 1, max_ms = 10, tms;
-	flags.imei_flag = flags.auto_cmd = 0;
+	flags.imei_flag = flags.auto_cmd = flags.inf = 0;
 	char *uk = NULL;
 	uint8_t cnt = 0, max_repeat = 8;
 	bool repeat = false;
@@ -2044,10 +2054,12 @@ void StartAtTask(void *argument)
 					osDelay(1);
 				}
 				cmdsDone = false;
-				if ( (strstr(buff, "AT+BTSPPSEND=")) ||
-							(strstr(buff, "AT+COPS")) ||
-								(strstr(buff, "AT+CIICR")) ) wait_ack = get_tmr(45);//WAIT ACK 45 SEC
-														else wait_ack = get_tmr(30);
+				if ( (strstr(buff, "AT+BTSPPSEND=")) || (strstr(buff, "AT+COPS")) ||
+								(strstr(buff, "AT+CIICR")) || (strstr(buff, "AT+CGACT=")) ) {
+					wait_ack = get_tmr(45);//WAIT ACK 45 SEC
+				} else {
+					wait_ack = get_tmr(15);
+				}
 				if (strstr(buff, "AT+GSN")) flags.imei_flag = 1;
 				if (strstr(buff, "AT+CIFSR")) flags.local_ip_flag = 1;
 				if (cmdsInd == -1) wait_ack = 0;
@@ -2113,6 +2125,15 @@ void StartAtTask(void *argument)
 					yes = true;
 					buff = msgGPRS;
 					gprs_stat.prompt = 0;
+				}
+				if (!yes) {
+					if (flags.inf) {
+						if (cmdsDone) {
+							flags.inf = 0;
+							yes = true;
+							buff = gpsINF;//AT+CGNSINF
+						}
+					}
 				}
 				if (yes) {
 					Report(false, "%s", buff);
@@ -2255,6 +2276,7 @@ void StartAtTask(void *argument)
 			AtParamInit();
 			gsmONOFF(tmps);
 			gprs_stat.init = gprs_stat.connect = 0;
+			flags.imei_flag = flags.auto_cmd = flags.inf = 0;
 		}
 
 		if (flags.srv) {

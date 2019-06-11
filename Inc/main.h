@@ -115,6 +115,7 @@ typedef struct {
 	unsigned msg_begin:1;
 	unsigned msg_end:1;
 	unsigned auto_cmd:1;
+	unsigned inf:1;
 } s_flags;
 
 //$--RMC,hhmmss.sss,x,llll.lll,a,yyyyy.yyy,a,x.x,u.u,xxxxxx,,,v*hh<CR><LF>

@@ -35,7 +35,7 @@
 #define LEN1K 1024
 #define buf_size (LEN1K << 1)
 #define TIME_STR_LEN LEN64
-#define tmr_def 30
+#define tmr_def 60
 
 //--------------------------------------------------------------------
 
