@@ -71,7 +71,8 @@
 //const char *ver = "ver 2.3rc4";//10.06.2019 - minor changes+
 //const char *ver = "ver 2.4rc1";//10.06.2019 - minor changes++
 //const char *ver = "ver 2.5rc1";//11.06.2019 - major changes in AtTask
-const char *ver = "ver 2.5rc2";//11.06.2019 - minor changes+ in AtTask
+//const char *ver = "ver 2.5rc2";//11.06.2019 - minor changes+ in AtTask
+const char *ver = "ver 2.5rc3";//13.06.2019 - minor changes : edit screen font (0x14, 0x15)
 
 
 /*
@@ -178,8 +179,6 @@ uint32_t atCounter = 0;
 char msgAT[MAX_UART_BUF] = {0};
 static s_msg_t q_at;
 static uint8_t evt_gsm = 0;
-static bool OnOffEn = false;
-static bool onGSM = false;
 
 static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
@@ -210,7 +209,7 @@ const char *cmds[] = {
 //	"AT+CENG?\r\n"
 };
 
-const char *srv_adr_def = "127.0.0.1";
+const char *srv_adr_def = "37.147.180.156";
 const uint16_t srv_port_def = 9192;
 static char srv_adr[64] = {0};
 static uint16_t srv_port;
@@ -1304,7 +1303,6 @@ void LogData()
 			evt_clear = true;
 		} else {
 				if (strstr(RxBuf, "INF:")) {
-					//strcpy(RxBuf, "AT+CGNSINF");
 					flags.inf = 1; priz = 1;
 				} else if (strstr(RxBuf, "GET:")) {
 					flags.msg_begin = 1;
@@ -1425,7 +1423,6 @@ void AtParamInit()
 	cmdsInd = -1;
 	initQ(&q_at);
 	initQ(&q_cmd);
-	OnOffEn = true;
 	HAL_UART_Receive_IT(portAT, (uint8_t *)&aRxByte, 1);//AT
 }
 //------------------------------------------------------------------------------------------
@@ -1501,11 +1498,11 @@ int8_t parse_gps(char *in, s_gps_t *data)
 								data->day = atoi(tmp);
 							}
 							break;
-						//case 12://mode+crc
-						//	data->mode = tmp[0];
-						//	uk = strchr(tmp, '*');
-						//	if (uk) data->crc = hextobin(*(uk + 1), *(uk + 2));
-						//	break;
+						/*case 12://mode+crc
+							data->mode = tmp[0];
+							uk = strchr(tmp, '*');
+							if (uk) data->crc = hextobin(*(uk + 1), *(uk + 2));
+							break;*/
 					}
 				}
 				uks = uke + 1;
@@ -1651,10 +1648,10 @@ int ret = -1;
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.longitude), "Longitude", 0);
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.speed), "Speed", 0);
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.dir), "Dir", 0);
-        //dl = sprintf(stx, "%c", data->rmc.mode);
-        //jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), "Mode", 0);
-        //dl = sprintf(stx, "%02X", data->rmc.crc);
-        //jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), "CRC", 0);
+        /*dl = sprintf(stx, "%c", data->rmc.mode);
+        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), "Mode", 0);
+        dl = sprintf(stx, "%02X", data->rmc.crc);
+        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), "CRC", 0);*/
 
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.pres), "Press", 0);
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.temp), "Temp", 0);
@@ -2159,12 +2156,10 @@ void StartAtTask(void *argument)
 			case 0:
 				if (getQ(msgAT, &q_at) < 0) break;
 				if (strstr(msgAT, "NORMAL POWER DOWN")) {
-					onGSM = false;
 					gprs_stat.init = gprs_stat.connect = 0;
 					wait_ack = get_tmr(4);
 					faza = 4;
 				} else if (strlen(msgAT)) {
-					onGSM = true;
 					if (flags.local_ip_flag) {
 						flags.local_ip_flag = 0;
 						gprs_stat.init = 1;
@@ -2355,14 +2350,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			  if (!flags.stop) flags.stop = 1;
 		  }
 		  //------------------------------------------------------------------------------------------
-		  //if (OnOffEn) {
-		  	  if (getVIO()) HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//gsm is on
-		  	  	       else HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//gsm is off
-		  //}
+		  if (getVIO()) HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//gsm is on
+		  	  	   else HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//gsm is off
 		  //------------------------------------------------------------------------------------------
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-		  strlen(conStatus[gprs_stat.connect]);
-		  toDisplay((const char *)conStatus[gprs_stat.connect], 0, 3, true);
+		  char pic = 0x14;
+		  if (gprs_stat.connect) pic = 0x15;
+		  sprintf(scrBuf, "%c %s", pic, conStatus[gprs_stat.connect]);
+		  toDisplay((const char *)scrBuf, 0, 3, true);
 #endif
 	  }
 

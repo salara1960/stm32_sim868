@@ -35,10 +35,13 @@
 #define LEN1K 1024
 #define buf_size (LEN1K << 1)
 #define TIME_STR_LEN LEN64
-#define tmr_def 60
+#define tmr_wait_def 60
+#define tcp_port_def 9192
 
 //--------------------------------------------------------------------
 
+
+unsigned int tmr_wait = tmr_wait_def;
 pid_t pid_main;
 FILE *pid_fp = NULL;
 const char *pid_name = "srv.pid";
@@ -209,11 +212,11 @@ char numName[64];
 
     int client = *(int *)arg;
 
-    sprintf(chap,"Start thread with socket %d. Wait data %u sec. ...\n", client, tmr_def);
+    sprintf(chap,"Start thread with socket %d. Wait data %u sec. ...\n", client, tmr_wait);
     print_cdr(chap, 1);
 
     uki = from_client;
-    tmr = get_timer_sec(tmr_def);
+    tmr = get_timer_sec(tmr_wait);
 
     while (!Vixod) {
         cli_tv.tv_sec  = 0;
@@ -252,7 +255,7 @@ char numName[64];
                 memset(from_client, 0, buf_size);
                 lenrecv = 0;
                 uki = from_client;
-                tmr = get_timer_sec(tmr_def);
+                tmr = get_timer_sec(tmr_wait);
             }//ready
 
         }//select
@@ -275,7 +278,7 @@ char numName[64];
     sprintf(chap, "Close thread with socket %d ", client);
     switch (res) {
         case 1 : sprintf(chap+strlen(chap), "[Client closed connection]\n"); break;
-        case 2 : sprintf(chap+strlen(chap), "[Timeout %d sec]\n", tmr_def); break;
+        case 2 : sprintf(chap+strlen(chap), "[Timeout %d sec]\n", tmr_wait); break;
             default : sprintf(chap+strlen(chap), "[Global interrupt]\n");
     }
     print_cdr(chap, 1);
@@ -291,7 +294,7 @@ int main (int argc, char *argv[])
 time_t ttm;
 fd_set Fds;
 char *stri = NULL, *abra = NULL;
-unsigned short tcp_port = 9292;
+unsigned short tcp_port = tcp_port_def;
 struct sockaddr_in srv_conn, cli_conn;
 socklen_t srvlen, clilen;
 struct timeval mytv;
@@ -300,14 +303,15 @@ pthread_attr_t threadAttr;
 struct sigaction Act, OldAct;
 char stril[LEN64] = {0};
 char chap[LEN256] = {0};
-char server_port[LEN64] = {0};
+//char server_port[LEN64] = {0};
 int connsocket = -1, client = -1, resa, Vixod = 0, on = 1;
 
-
+/*
     if (argc < 2) {
-        printf("ERROR: you must enter port number\nfor example:./srv 9292\n\n");
+        printf("start server : ./srv 9292 45\n\n");
         return 1;
     }
+*/
 
     pid_main = getpid();
     pid_fp = fopen(pid_name, "w");
@@ -319,10 +323,14 @@ int connsocket = -1, client = -1, resa, Vixod = 0, on = 1;
         fclose(pid_fp);
     }
 
-    strcpy(server_port, argv[1]);
-    resa = atoi(server_port);
-    if ((resa > 0) && (resa < 0xffff)) tcp_port = resa;
-
+    if (argc > 1) {
+        resa = atoi(argv[1]);
+        if ((resa > 0) && (resa < 0xffff)) tcp_port = resa;
+    }
+    if (argc > 2) {
+        resa = atoi(argv[2]);
+        if ((resa > 0) && (resa <= 120)) tmr_wait = resa;
+    }
 
     //------------  set signals route function ------------------
     memset((unsigned char *)&Act, 0, sizeof(struct sigaction));
@@ -385,7 +393,7 @@ int connsocket = -1, client = -1, resa, Vixod = 0, on = 1;
 
         fcntl(connsocket, F_SETFL, (fcntl(connsocket, F_GETFL)) | O_NONBLOCK);
 
-        sprintf(chap,"Listen client [port %d]...\n", tcp_port);
+        sprintf(chap,"Listen client [port %d timeout %u sec.]...\n", tcp_port, tmr_wait);
         print_cdr(chap, 1);
 
 
