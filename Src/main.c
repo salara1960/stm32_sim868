@@ -72,7 +72,8 @@
 //const char *ver = "ver 2.4rc1";//10.06.2019 - minor changes++
 //const char *ver = "ver 2.5rc1";//11.06.2019 - major changes in AtTask
 //const char *ver = "ver 2.5rc2";//11.06.2019 - minor changes+ in AtTask
-const char *ver = "ver 2.5rc3";//13.06.2019 - minor changes : edit screen font (0x14, 0x15)
+//const char *ver = "ver 2.5rc3";//13.06.2019 - minor changes : edit screen font (0x14, 0x15)
+const char *ver = "ver 2.5rc4";//01.07.2019 - minor changes : add sim number, set one config struct for jfes
 
 
 /*
@@ -184,7 +185,7 @@ static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
-const uint8_t cmdsMax = 19;//21;
+const uint8_t cmdsMax = 18;//19;//21;
 const char *cmds[] = {
 	"AT\r\n",
 	"AT+CMEE=0\r\n",
@@ -195,7 +196,7 @@ const char *cmds[] = {
 	"AT+CSCS=\"IRA\"\r\n",
 	"AT+CGNSPWR=1\r\n",// power for GPS/GLONASS ON
 	"AT+CGNSPWR?\r\n",//check power for GPS/GLONASS status
-	"AT+CCLK?\r\n",//get date/time
+//	"AT+CCLK?\r\n",//get date/time
 	"AT+CREG?\r\n",
 	"AT+CSQ\r\n",//get RSSI
 //	"AT+CENG=1\r\n",//Switch on engineering mode
@@ -209,7 +210,8 @@ const char *cmds[] = {
 //	"AT+CENG?\r\n"
 };
 
-const char *srv_adr_def = "37.147.180.156";
+const char *sim_num = "906210XXXX";
+const char *srv_adr_def = "127.0.0.1";
 const uint16_t srv_port_def = 9192;
 static char srv_adr[64] = {0};
 static uint16_t srv_port;
@@ -231,6 +233,10 @@ s_gsm_stat gsm_stat = {0};
 
 const char *gpsINF = "AT+CGNSINF\r\n";
 
+static jfes_config_t conf;
+static jfes_config_t *jc = NULL;
+
+static bool con_dis = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -249,7 +255,7 @@ void StartSensTask(void *argument); // for v2
 void StartAtTask(void *argument); // for v2
 
 /* USER CODE BEGIN PFP */
-
+void *getMem(size_t sz);
 void Report(bool addTime, const char *fmt, ...);
 void errLedOn(const char *from);
 void gsmONOFF(uint32_t tw);
@@ -342,6 +348,10 @@ int main(void)
     strcpy(srv_adr, srv_adr_def);
     srv_port = srv_port_def;
 
+    conf.jfes_malloc = (jfes_malloc_t)pvPortMalloc;
+    conf.jfes_free = vPortFree;
+    jc = (jfes_config_t *)&conf;
+
   /* USER CODE END 2 */
 
   osKernelInitialize(); // Initialize CMSIS-RTOS
@@ -399,7 +409,7 @@ int main(void)
   const osThreadAttr_t sensTask_attributes = {
     .name = "sensTask",
     .priority = (osPriority_t) osPriorityNormal,
-    .stack_size = 768
+    .stack_size = 1024
   };
   sensTaskHandle = osThreadNew(StartSensTask, NULL, &sensTask_attributes);
 
@@ -407,7 +417,7 @@ int main(void)
   const osThreadAttr_t atTask_attributes = {
     .name = "atTask",
     .priority = (osPriority_t) osPriorityHigh,
-    .stack_size = 2048
+    .stack_size = 2560
   };
   atTaskHandle = osThreadNew(StartAtTask, NULL, &atTask_attributes);
 
@@ -1313,8 +1323,10 @@ void LogData()
 					flags.srv = 1; priz = true;
 				} else if (strstr(RxBuf, "CON:")) {
 					flags.connect = 1; priz = true;
+					con_dis = true;
 				} else if (strstr(RxBuf, "DIS:")) {
 					flags.disconnect = 1; priz = true;
+					con_dis = false;
 				} else if (strstr(RxBuf, "VIO:")) {
 					flags.vio = 1; priz = true;
 				} else if (strstr(RxBuf, "ON:")) {
@@ -1610,17 +1622,24 @@ int8_t parse_inf(char *in, s_inf_t *inf)
 	return 0;
 }
 //------------------------------------------------------------------------------------------
-int makeDataJsonString(s_data_t *data, char *buf)
+int8_t makeDataJsonString(s_data_t *data, char *buf, jfes_config_t *jconf)
 {
-int ret = -1;
+int8_t ret = -1;
 
-    if (!data || !buf) return ret;
+    if (!data || !buf || !jconf) return ret;
 
+    //Report(true, "[%s] FreeMem:%u\r\n", __func__, xPortGetFreeHeapSize());
+
+//sprintf(buf, "{\"FreeMem\":%u}", xPortGetFreeHeapSize());
+//return 0;
+
+/*
     jfes_config_t conf = {
         .jfes_malloc = (jfes_malloc_t)pvPortMalloc,
-	.jfes_free = vPortFree
+		.jfes_free = vPortFree
     };
     jfes_config_t *jconf = &conf;
+*/
 
     jfes_value_t *obj = jfes_create_object_value(jconf);
     if (obj) {
@@ -1628,7 +1647,9 @@ int ret = -1;
         jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, "COMBO", 0), "MsgType", 0);
         if (strlen(devID)) jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, devID, 0), "DevID", 0);
         jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, dev_name, 0), "DevName", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, sim_num, 0), "SimNumber", 0);
         jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, get_secCounter()), "DevTime", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, xPortGetFreeHeapSize()), "FreeMem", 0);
         if (setDate) {
 #ifdef SET_RTC_TMR
             uint32_t ep = getSecRTC(&hrtc);
@@ -1648,49 +1669,49 @@ int ret = -1;
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.longitude), "Longitude", 0);
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.speed), "Speed", 0);
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.dir), "Dir", 0);
-        /*dl = sprintf(stx, "%c", data->rmc.mode);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), "Mode", 0);
-        dl = sprintf(stx, "%02X", data->rmc.crc);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), "CRC", 0);*/
-
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.pres), "Press", 0);
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.temp), "Temp", 0);
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.lux), "Lux", 0);
         if (data->sens.chip == BME280_SENSOR)
                     jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.humi), "Humi", 0);
-
         jfes_size_t stx_size  = MAX_UART_BUF - 1;
-        jfes_value_to_string(obj, buf, &stx_size, 1);
-        *(buf + stx_size) = '\0';
+        jfes_status_t stat = jfes_value_to_string(obj, buf, &stx_size, 1);
+        if (stat != jfes_success) Report(true, "[%s] jfes_value_to_string() = %d\r\n", __func__, stat);
+                			 else *(buf + stx_size) = '\0';
 
-        jfes_free_value(jconf, obj);
+        stat = jfes_free_value(jconf, obj);
+        if (stat != jfes_success) Report(true, "[%s] jfes_free_value() = %d\r\n", __func__, stat);
 
         ret = 0;
     }
 
+    //Report(true, "[%s] FreeMem:%u\r\n", __func__, xPortGetFreeHeapSize());
+
     return ret;
 }
 //-----------------------------------------------------------------------------------------
-int makeINFJsonString(s_inf_t *inf, char *buf)
+int8_t makeINFJsonString(s_inf_t *inf, char *buf, jfes_config_t *jconf)
 {
-int ret = -1;
+int8_t ret = -1;
 
-    if (!inf || !buf) return ret;
-
+    if (!inf || !buf || !jconf) return ret;
+/*
     jfes_config_t conf = {
         .jfes_malloc = (jfes_malloc_t)pvPortMalloc,
-	.jfes_free = vPortFree
+		.jfes_free = vPortFree
     };
     jfes_config_t *jconf = &conf;
-    
+*/
     jfes_value_t *obj = jfes_create_object_value(jconf);
     if (obj) {
-	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ++infCounter), "InfSeqNum", 0);
-	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, "+CGNSINF", 0), "MsgType", 0);
-	if (strlen(devID)) jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, devID, 0), "DevID", 0);
-	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, dev_name, 0), "DevName", 0);
-	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, get_secCounter()), "DevTime", 0);
-	if (setDate) {
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ++infCounter), "InfSeqNum", 0);
+    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, "+CGNSINF", 0), "MsgType", 0);
+    	if (strlen(devID)) jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, devID, 0), "DevID", 0);
+    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, dev_name, 0), "DevName", 0);
+    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, sim_num, 0), "SimNumber", 0);
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, get_secCounter()), "DevTime", 0);
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, xPortGetFreeHeapSize()), "FreeMem", 0);
+    	if (setDate) {
 #ifdef SET_RTC_TMR
             uint32_t ep = getSecRTC(&hrtc);
 #else
@@ -1720,10 +1741,12 @@ int ret = -1;
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)inf->VPA), "VPA", 0);
         
         jfes_size_t stx_size  = MAX_UART_BUF - 1;
-        jfes_value_to_string(obj, buf, &stx_size, 1);
-        *(buf + stx_size) = '\0';
+        jfes_status_t stat = jfes_value_to_string(obj, buf, &stx_size, 1);
+        if (stat != jfes_success) Report(true, "[%s] jfes_value_to_string() = %d\r\n", __func__, stat);
+        					 else *(buf + stx_size) = '\0';
                                     
-        jfes_free_value(jconf, obj);
+        stat = jfes_free_value(jconf, obj);
+        if (stat != jfes_success) Report(true, "[%s] jfes_free_value() = %d\r\n", __func__, stat);
         
         ret = 0;
     }
@@ -1795,7 +1818,7 @@ void StartDefTask(void *argument)
   					memcpy((uint8_t *)&allData.rmc, (uint8_t *)&one, sizeof(s_gps_t));
   					new |= 2;
   				} else if (!parse_inf(msgNMEA, &inf)) {
-  					if (!makeINFJsonString(&inf, msgNMEA)) {
+  					if (!makeINFJsonString(&inf, msgNMEA, jc)) {
   						if (flags.gps_log_show) Report(false, "%s (size=%d)\r\n", msgNMEA, strlen(msgNMEA));
   					}
   				}
@@ -1807,7 +1830,7 @@ void StartDefTask(void *argument)
 
   		//--------------------------------------------------------------------------
   		if (mailQueueHandle) {
-  			if (osMessageQueueGet(mailQueueHandle, (void *)&levt, NULL, 100) == osOK) {
+  			if (osMessageQueueGet(mailQueueHandle, (void *)&levt, NULL, 50) == osOK) {
   				memcpy((uint8_t *)&allData.sens, (uint8_t *)&levt, sizeof(result_t));
   				new |= 1;
   				mkMsgData(&levt, &evt);
@@ -2006,6 +2029,8 @@ void StartAtTask(void *argument)
 
 	tms = min_ms;
 
+	s_data_t aData;
+
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 	sprintf(toScr, "%s", srv_adr);
 	toDisplay((const char *)toScr, 0, 2, false);
@@ -2037,7 +2062,7 @@ void StartAtTask(void *argument)
 				} else {
 					if (cmdsDone && !flags.auto_cmd) {
 						if (getQ(msgCMD, &q_cmd) >= 0) {//send at command to sim868
-							buff = msgCMD;
+							buff = &msgCMD[0];
 							//Report(false, msgCMD);
 							faza = 1;
 						} else faza = 3;
@@ -2105,8 +2130,8 @@ void StartAtTask(void *argument)
 						}
 					}
 				}
-				if (osMessageQueueGet(mqData, (void *)&allData, NULL, 10) == osOK) {
-					if (!makeDataJsonString(&allData, msgGPRS)) {//make json string
+				if (osMessageQueueGet(mqData, (void *)&aData, NULL, 10) == osOK) {
+					if (!makeDataJsonString(&aData, msgGPRS, jc)) {//make json string
 						strcat(msgGPRS, "\r\n");
 						if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
 							sprintf(cmd, "AT+CIPSEND=%d\r\n", strlen(msgGPRS));
@@ -2117,6 +2142,9 @@ void StartAtTask(void *argument)
 							if (flags.combo_log_show) Report(true, "%s", msgGPRS);
 						}
 					}
+					//
+					//Report(true, "[%s] FreeMem:%u\r\n", __func__, xPortGetFreeHeapSize());
+					//
 				}
 				if (gprs_stat.prompt && gprs_stat.connect) {
 					yes = true;
@@ -2347,7 +2375,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 #endif
 		  //------------------------------------------------------------------------------------------
 		  if (HAL_GPIO_ReadPin(USER_IN_GPIO_Port, USER_IN_Pin) == GPIO_PIN_SET) {//user key is pressed
-			  if (!flags.stop) flags.stop = 1;
+			  //if (!flags.stop) flags.stop = 1;
+			  if (!con_dis) {
+				  if (!flags.connect)    { flags.connect = 1;    con_dis = true;  }
+			  } else {
+				  if (!flags.disconnect) { flags.disconnect = 1; con_dis = false; }
+			  }
 		  }
 		  //------------------------------------------------------------------------------------------
 		  if (getVIO()) HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//gsm is on

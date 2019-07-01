@@ -62,10 +62,16 @@ typedef struct {
 	float humi;// %rH
 	float lux;// lux
 } result_t;
+#pragma pack(pop)
+
+#pragma pack(push,1)
 typedef struct {
 	uint16_t cel;
 	uint16_t dro;
 } conv_t;
+#pragma pack(pop)
+
+#pragma pack(push,1)
 typedef struct {
 	uint8_t chip;
 	conv_t temp;// DegC
@@ -80,7 +86,9 @@ typedef struct q_msg_t {
 	int8_t id;
 	char *adr;
 } q_msg_t;
+#pragma pack(pop)
 
+#pragma pack(push,1)
 typedef struct s_msg_t {
 	uint8_t put;
 	uint8_t get;
@@ -88,6 +96,7 @@ typedef struct s_msg_t {
 } s_msg_t;
 #pragma pack(pop)
 
+#pragma pack(push,1)
 typedef struct {
 	unsigned init:1;
 	unsigned connect:1;
@@ -98,8 +107,11 @@ typedef struct {
 	unsigned cgatt_on:1;
 	unsigned send_ok:1;
 	unsigned next_send:1;
+	unsigned unused:7;
 } s_gprs_stat;
+#pragma pack(pop)
 
+#pragma pack(push,1)
 typedef struct {
 	unsigned gps_log_show:1;
 	unsigned i2c_log_show:1;
@@ -116,7 +128,9 @@ typedef struct {
 	unsigned msg_end:1;
 	unsigned auto_cmd:1;
 	unsigned inf:1;
+	unsigned unused:1;
 } s_flags;
+#pragma pack(pop)
 
 //$--RMC,hhmmss.sss,x,llll.lll,a,yyyyy.yyy,a,x.x,u.u,xxxxxx,,,v*hh<CR><LF>
 //$GNRMC,001805.868,V,,,,,0.00,0.00,060180,,,N*56
@@ -139,7 +153,9 @@ typedef struct {
 //	char mode;		//v = ‘N’ = Data not valid, ‘A’ = Autonomous mode, ‘D’ = Differential mode, ‘E’ = Estimated (dead reckoning) mode
 //	uint8_t crc;
 } s_gps_t;
+#pragma pack(pop)
 
+#pragma pack(push,1)
 typedef struct {
 	uint16_t year;
 	uint8_t mon;
@@ -149,7 +165,10 @@ typedef struct {
 	uint8_t sec;
 	uint16_t ms;
 } s_utc_t;
+#pragma pack(pop)
+
 //+CGNSINF: 1,0,19800106002148.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
+#pragma pack(push,1)
 typedef struct {
 	uint8_t run;		//1
 	uint8_t status;		//2
@@ -173,13 +192,17 @@ typedef struct {
 	float HPA;			//20
 	float VPA;			//21
 } s_inf_t;
+#pragma pack(pop)
 
+#pragma pack(push,1)
 typedef struct {
 	result_t sens;
 	s_gps_t rmc;
 	//s_inf_t inf;
 } s_data_t;//allData;
+#pragma pack(pop)
 
+#pragma pack(push,1)
 typedef struct {
 	uint8_t rssi;
 } s_gsm_stat;
@@ -214,7 +237,7 @@ SPI_HandleTypeDef *portSPI;
 
 #define wait_sensor_def 32
 #define wait_gps_def wait_sensor_def - 2 //>> 1
-#define MAX_UART_BUF 640//512//480//400//384//256
+#define MAX_UART_BUF 704//640//512//480//400//384//256
 
 
 /* USER CODE END EM */
