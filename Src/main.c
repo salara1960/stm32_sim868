@@ -73,7 +73,8 @@
 //const char *ver = "ver 2.5rc1";//11.06.2019 - major changes in AtTask
 //const char *ver = "ver 2.5rc2";//11.06.2019 - minor changes+ in AtTask
 //const char *ver = "ver 2.5rc3";//13.06.2019 - minor changes : edit screen font (0x14, 0x15)
-const char *ver = "ver 2.5rc4";//01.07.2019 - minor changes : add sim number, set one config struct for jfes
+//const char *ver = "ver 2.5rc4";//01.07.2019 - minor changes : add sim number, set one config struct for jfes
+const char *ver = "ver 2.6rc1";//02.07.2019 - major changes : remove jfes library (reason - memory leak in library)
 
 
 /*
@@ -210,8 +211,8 @@ const char *cmds[] = {
 //	"AT+CENG?\r\n"
 };
 
-const char *sim_num = "906210XXXX";
-const char *srv_adr_def = "127.0.0.1";
+const char *sim_num = "9062103497";
+const char *srv_adr_def = "128.71.70.213";
 const uint16_t srv_port_def = 9192;
 static char srv_adr[64] = {0};
 static uint16_t srv_port;
@@ -233,10 +234,8 @@ s_gsm_stat gsm_stat = {0};
 
 const char *gpsINF = "AT+CGNSINF\r\n";
 
-static jfes_config_t conf;
-static jfes_config_t *jc = NULL;
-
 static bool con_dis = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -347,10 +346,6 @@ int main(void)
 
     strcpy(srv_adr, srv_adr_def);
     srv_port = srv_port_def;
-
-    conf.jfes_malloc = (jfes_malloc_t)pvPortMalloc;
-    conf.jfes_free = vPortFree;
-    jc = (jfes_config_t *)&conf;
 
   /* USER CODE END 2 */
 
@@ -875,6 +870,10 @@ static void MX_GPIO_Init(void)
 
 }
 
+//-----------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------
+
 /* USER CODE BEGIN 4 */
 
 //-----------------------------------------------------------------------------------------
@@ -906,7 +905,6 @@ uint8_t a, b, c, i;
     return a;
 }
 //------------------------------------------------------------------------------------------
-/**/
 void gsmONOFF(uint32_t twait)
 {
 	flags.gps_log_show = flags.i2c_log_show = flags.combo_log_show = 0;
@@ -916,7 +914,6 @@ void gsmONOFF(uint32_t twait)
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
 	Report(true, "GSM_KEY set to 1 (vio=%u)\r\n", getVIO());
 }
-/**/
 //-----------------------------------------------------------------------------
 void ClearRxBuf()
 {
@@ -1622,136 +1619,194 @@ int8_t parse_inf(char *in, s_inf_t *inf)
 	return 0;
 }
 //------------------------------------------------------------------------------------------
-int8_t makeDataJsonString(s_data_t *data, char *buf, jfes_config_t *jconf)
+int8_t makeDataString(const s_data_t *data, char *buf, const int max_len_buf)
 {
-int8_t ret = -1;
+	if (!data || !buf) return 1;
 
-    if (!data || !buf || !jconf) return ret;
+	char tmp[64];
+	int len = 4;
+	strcpy(buf, "{\r\n");
 
-    //Report(true, "[%s] FreeMem:%u\r\n", __func__, xPortGetFreeHeapSize());
+		len += sprintf(tmp, "\t\"DataSeqNum\": %lu,\r\n", ++dataCounter);
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-//sprintf(buf, "{\"FreeMem\":%u}", xPortGetFreeHeapSize());
-//return 0;
+		len += sprintf(tmp, "\t\"MsgType\": \"COMBO\",\r\n");
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-/*
-    jfes_config_t conf = {
-        .jfes_malloc = (jfes_malloc_t)pvPortMalloc,
-		.jfes_free = vPortFree
-    };
-    jfes_config_t *jconf = &conf;
-*/
+		len += sprintf(tmp, "\t\"devID\": \"%s\",\r\n", devID);
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-    jfes_value_t *obj = jfes_create_object_value(jconf);
-    if (obj) {
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ++dataCounter), "DataSeqNum", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, "COMBO", 0), "MsgType", 0);
-        if (strlen(devID)) jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, devID, 0), "DevID", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, dev_name, 0), "DevName", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, sim_num, 0), "SimNumber", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, get_secCounter()), "DevTime", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, xPortGetFreeHeapSize()), "FreeMem", 0);
+		len += sprintf(tmp, "\t\"DevName\": \"%s\",\r\n", dev_name);
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+		len += sprintf(tmp, "\t\"SimNumber\": \"%s\",\r\n", sim_num);
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+		len += sprintf(tmp, "\t\"DevTime\": %lu,\r\n", get_secCounter());
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+		len += sprintf(tmp, "\t\"FreeMem\": %u,\r\n", xPortGetFreeHeapSize());
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
         if (setDate) {
 #ifdef SET_RTC_TMR
             uint32_t ep = getSecRTC(&hrtc);
 #else
             uint32_t ep = get_extDate();
 #endif
-            jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ep), "EpochTime", 0);
+            len += sprintf(tmp, "\t\"EpochTime\": %lu,\r\n", ep);
+            if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
         }
-        char stx[64];
-        int dl = sprintf(stx, "%02u.%02u.%02u %02u:%02u:%02u.%03u",
-        		data->rmc.day, data->rmc.mon, data->rmc.year, data->rmc.hour, data->rmc.min, data->rmc.sec, data->rmc.ms);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), "UTC", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, nameValid[data->rmc.good], 0), "Status", 0);
-        if (data->rmc.ns) data->rmc.latitude *= -1.0;
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.latitude), "Latitude", 0);
-        if (data->rmc.ew) data->rmc.longitude *= -1.0;
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.longitude), "Longitude", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.speed), "Speed", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->rmc.dir), "Dir", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.pres), "Press", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.temp), "Temp", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.lux), "Lux", 0);
-        if (data->sens.chip == BME280_SENSOR)
-                    jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.humi), "Humi", 0);
-        jfes_size_t stx_size  = MAX_UART_BUF - 1;
-        jfes_status_t stat = jfes_value_to_string(obj, buf, &stx_size, 1);
-        if (stat != jfes_success) Report(true, "[%s] jfes_value_to_string() = %d\r\n", __func__, stat);
-                			 else *(buf + stx_size) = '\0';
 
-        stat = jfes_free_value(jconf, obj);
-        if (stat != jfes_success) Report(true, "[%s] jfes_free_value() = %d\r\n", __func__, stat);
+        len += sprintf(tmp, "\t\"UTC\": \"%02u.%02u.%02u %02u:%02u:%02u.%03u\",\r\n",
+        				data->rmc.day, data->rmc.mon, data->rmc.year, data->rmc.hour, data->rmc.min, data->rmc.sec, data->rmc.ms);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        ret = 0;
-    }
+        len += sprintf(tmp, "\t\"Status\": \"%s\",\r\n", nameValid[data->rmc.good]);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-    //Report(true, "[%s] FreeMem:%u\r\n", __func__, xPortGetFreeHeapSize());
+        float flo = data->rmc.latitude;
+        if (data->rmc.ns) flo *= -1.0;
+        len += sprintf(tmp, "\t\"Latitude\": %f,\r\n", flo);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-    return ret;
+        flo = data->rmc.longitude;
+        if (data->rmc.ew) flo *= -1.0;
+        len += sprintf(tmp, "\t\"Longitude\": %f,\r\n", flo);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Speed\": %.2f,\r\n", data->rmc.speed);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Dir\": %.2f,\r\n", data->rmc.dir);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        iresult_t evt;
+        mkMsgData((result_t *)&data->sens, &evt);
+        len += sprintf(tmp, "\t\"Press\": %u.%u,\r\n", evt.pres.cel, evt.pres.dro);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Temp\": %u.%u,\r\n", evt.temp.cel, evt.temp.dro);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        if (data->sens.chip == BME280_SENSOR) {
+        	len += sprintf(tmp, "\t\"Lux\": %u.%u,\r\n", evt.lux.cel, evt.lux.dro);
+        } else {
+        	len += sprintf(tmp, "\t\"Lux\": %u.%u\r\n", evt.lux.cel, evt.lux.dro);
+        }
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        if (data->sens.chip == BME280_SENSOR) {
+        	len += sprintf(tmp, "\t\"Humi\": %u.%u\r\n", evt.humi.cel, evt.humi.dro);
+        	if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+        }
+
+done:
+
+	strcat(buf, "}");
+
+	return 0;
 }
-//-----------------------------------------------------------------------------------------
-int8_t makeINFJsonString(s_inf_t *inf, char *buf, jfes_config_t *jconf)
+//------------------------------------------------------------------------------------------
+int8_t makeInfString(const s_inf_t *data, char *buf, const int max_len_buf)
 {
-int8_t ret = -1;
+	if (!data || !buf) return 1;
 
-    if (!inf || !buf || !jconf) return ret;
-/*
-    jfes_config_t conf = {
-        .jfes_malloc = (jfes_malloc_t)pvPortMalloc,
-		.jfes_free = vPortFree
-    };
-    jfes_config_t *jconf = &conf;
-*/
-    jfes_value_t *obj = jfes_create_object_value(jconf);
-    if (obj) {
-    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ++infCounter), "InfSeqNum", 0);
-    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, "+CGNSINF", 0), "MsgType", 0);
-    	if (strlen(devID)) jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, devID, 0), "DevID", 0);
-    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, dev_name, 0), "DevName", 0);
-    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, sim_num, 0), "SimNumber", 0);
-    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, get_secCounter()), "DevTime", 0);
-    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, xPortGetFreeHeapSize()), "FreeMem", 0);
-    	if (setDate) {
+	char tmp[64];
+	int len = 4;
+	strcpy(buf, "{\r\n");
+
+		len += sprintf(tmp, "\t\"InfSeqNum\": %lu,\r\n", ++infCounter);
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+		len += sprintf(tmp, "\t\"MsgType\": \"+CGNSINF\",\r\n");
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+		len += sprintf(tmp, "\t\"devID\": \"%s\",\r\n", devID);
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+		len += sprintf(tmp, "\t\"DevName\": \"%s\",\r\n", dev_name);
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+		len += sprintf(tmp, "\t\"SimNumber\": \"%s\",\r\n", sim_num);
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+		len += sprintf(tmp, "\t\"DevTime\": %lu,\r\n", get_secCounter());
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+		len += sprintf(tmp, "\t\"FreeMem\": %u,\r\n", xPortGetFreeHeapSize());
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        if (setDate) {
 #ifdef SET_RTC_TMR
             uint32_t ep = getSecRTC(&hrtc);
 #else
             uint32_t ep = get_extDate();
 #endif
-            jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ep), "EpochTime", 0);
+            len += sprintf(tmp, "\t\"EpochTime\": %lu,\r\n", ep);
+            if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
         }
-        char stx[64];
-        int dl = sprintf(stx, "%02u.%02u.%04u %02u:%02u:%02u.%03u",inf->utc.day, inf->utc.mon, inf->utc.year, inf->utc.hour, inf->utc.min, inf->utc.sec, inf->utc.ms);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), "UTC", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, inf->run), "Run", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, nameValid[inf->status&1], 0), "Status", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)inf->latitude), "Latitude", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)inf->longitude), "Longitude", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, inf->altitude), "Altitude", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)inf->speed), "Speed", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)inf->dir), "Dir", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, inf->mode), "Mode", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)inf->HDOP), "HDOP", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)inf->PDOP), "PDOP", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)inf->VDOP), "VDOP", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, inf->GPSsatV), "SatGPSV", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, inf->GNSSsatU), "SatGNSSU", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, inf->GLONASSsatV), "SatGLONASSV", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, inf->dBHz), "dBHz", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)inf->HPA), "HPA", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)inf->VPA), "VPA", 0);
-        
-        jfes_size_t stx_size  = MAX_UART_BUF - 1;
-        jfes_status_t stat = jfes_value_to_string(obj, buf, &stx_size, 1);
-        if (stat != jfes_success) Report(true, "[%s] jfes_value_to_string() = %d\r\n", __func__, stat);
-        					 else *(buf + stx_size) = '\0';
-                                    
-        stat = jfes_free_value(jconf, obj);
-        if (stat != jfes_success) Report(true, "[%s] jfes_free_value() = %d\r\n", __func__, stat);
-        
-        ret = 0;
-    }
-    
-    return ret;
+
+        len += sprintf(tmp, "\t\"UTC\": \"%02u.%02u.%02u %02u:%02u:%02u.%03u\",\r\n",
+        				data->utc.day, data->utc.mon, data->utc.year, data->utc.hour, data->utc.min, data->utc.sec, data->utc.ms);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Run\": %u,\r\n", data->run);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Status\": \"%s\",\r\n", nameValid[data->status&1]);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Latitude\": %f,\r\n", data->latitude);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Longitude\": %f,\r\n", data->longitude);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Altitude\": %d,\r\n", data->altitude);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Speed\": %.2f,\r\n", data->speed);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Dir\": %.2f,\r\n", data->dir);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Mode\": %u,\r\n", data->mode);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"HDOP\": %.2f,\r\n", data->HDOP);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"PDOP\": %.2f,\r\n", data->PDOP);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"VDOP\": %.2f,\r\n", data->VDOP);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"SatGPSV\": %u,\r\n", data->GPSsatV);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"SatGNSSU\": %u,\r\n", data->GNSSsatU);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"SatGLONASSV\": %u,\r\n", data->GLONASSsatV);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"dBHz\": %u,\r\n", data->dBHz);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"HPA\": %.2f,\r\n", data->HPA);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"VPA\": %.2f\r\n", data->VPA);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+done:
+
+	strcat(buf, "}");
+
+	return 0;
 }
 //-----------------------------------------------------------------------------------------
 void toDisplay(const char *st, uint8_t column, uint8_t line, bool clear)
@@ -1818,7 +1873,7 @@ void StartDefTask(void *argument)
   					memcpy((uint8_t *)&allData.rmc, (uint8_t *)&one, sizeof(s_gps_t));
   					new |= 2;
   				} else if (!parse_inf(msgNMEA, &inf)) {
-  					if (!makeINFJsonString(&inf, msgNMEA, jc)) {
+  					if (!makeInfString(&inf, msgNMEA, sizeof(msgNMEA) - 1)) {
   						if (flags.gps_log_show) Report(false, "%s (size=%d)\r\n", msgNMEA, strlen(msgNMEA));
   					}
   				}
@@ -2131,7 +2186,7 @@ void StartAtTask(void *argument)
 					}
 				}
 				if (osMessageQueueGet(mqData, (void *)&aData, NULL, 10) == osOK) {
-					if (!makeDataJsonString(&aData, msgGPRS, jc)) {//make json string
+					if (!makeDataString(&aData, msgGPRS, sizeof(msgGPRS) - 3)) {
 						strcat(msgGPRS, "\r\n");
 						if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
 							sprintf(cmd, "AT+CIPSEND=%d\r\n", strlen(msgGPRS));
@@ -2247,6 +2302,7 @@ void StartAtTask(void *argument)
 							gprs_stat.next_send = 1;
 						} else if ((strstr(msgAT, "CLOSE") || strstr(msgAT, "ERROR")) && gprs_stat.connect) {
 							gprs_stat.connect = 0;
+							con_dis = false;
 							gprs_stat.send_ok = gprs_stat.next_send = 1;
 							Report(true, "--- DISCONNECTED ---\r\n");
 							if (gprs_stat.try_disconnect) gprs_stat.try_disconnect = 0;
@@ -2259,6 +2315,7 @@ void StartAtTask(void *argument)
 								Report(true, "+++ CONNECTED +++\r\n");
 								gprs_stat.try_connect = 0;
 								flags.msg_begin = 1;
+								con_dis = true;
 							}
 						}
 
@@ -2377,9 +2434,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		  if (HAL_GPIO_ReadPin(USER_IN_GPIO_Port, USER_IN_Pin) == GPIO_PIN_SET) {//user key is pressed
 			  //if (!flags.stop) flags.stop = 1;
 			  if (!con_dis) {
-				  if (!flags.connect)    { flags.connect = 1;    con_dis = true;  }
+				  if (!flags.connect) flags.connect = 1;
+				  con_dis = true;
 			  } else {
-				  if (!flags.disconnect) { flags.disconnect = 1; con_dis = false; }
+				  if (!flags.disconnect) flags.disconnect = 1;
+				  con_dis = false;
 			  }
 		  }
 		  //------------------------------------------------------------------------------------------

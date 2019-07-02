@@ -33,7 +33,6 @@
 "Src/bmp280.o"
 "Src/font.o"
 "Src/freertos.o"
-"Src/jfes.o"
 "Src/main.o"
 "Src/ssd1306_i2c.o"
 "Src/ssd1306_spi.o"

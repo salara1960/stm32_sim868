@@ -40,7 +40,6 @@ extern "C" {
 #include <time.h>
 #include <math.h>
 #include <stdarg.h>
-#include "jfes.h"
 
 //#include "stm32f4xx_hal_rtc.h"
 /* USER CODE END Includes */
