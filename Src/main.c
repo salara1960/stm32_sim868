@@ -74,12 +74,17 @@
 //const char *ver = "ver 2.5rc2";//11.06.2019 - minor changes+ in AtTask
 //const char *ver = "ver 2.5rc3";//13.06.2019 - minor changes : edit screen font (0x14, 0x15)
 //const char *ver = "ver 2.5rc4";//01.07.2019 - minor changes : add sim number, set one config struct for jfes
-const char *ver = "ver 2.6rc1";//02.07.2019 - major changes : remove jfes library (reason - memory leak in library)
+//const char *ver = "ver 2.6rc1";//02.07.2019 - major changes : remove jfes library (reason - memory leak in library)
+const char *ver = "ver 2.7rc1";//02.07.2019 - major changes : unused gps serial port(USART2), used AT+CGNSINF command for getting gps data
 
 
 /*
 post-build steps command:
 arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtifactFileBaseName}.bin" && ls -la | grep "${BuildArtifactFileBaseName}.*"
+
+LINK:
+-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -specs=nosys.specs -specs=nano.specs -u_printf_float -T"../STM32F407VGTx_FLASH.ld" -Wl,-Map=output.map -Wl,--gc-sections -lm
+-specs=nano.specs
 */
 
 /* USER CODE END Includes */
@@ -211,8 +216,8 @@ const char *cmds[] = {
 //	"AT+CENG?\r\n"
 };
 
-const char *sim_num = "9062103497";
-const char *srv_adr_def = "128.71.70.213";
+const char *sim_num = "9062100000";
+const char *srv_adr_def = "127.0.0.1";
 const uint16_t srv_port_def = 9192;
 static char srv_adr[64] = {0};
 static uint16_t srv_port;
@@ -1397,32 +1402,14 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	if (huart->Instance == UART4) {// portAT - at_commands
 		getAT();
 		adrByte = &aRxByte;
-	} else if (huart->Instance == USART2) {// portGPS - gps_nmea_messages
-		getNMEA();
-		adrByte = &gRxByte;
+//	} else if (huart->Instance == USART2) {// portGPS - gps_nmea_messages
+//		getNMEA();
+//		adrByte = &gRxByte;
 	} else if (huart->Instance == USART3 ) {// portLOG - log
 		LogData();
 		adrByte = &lRxByte;
 	}
 	if (adrByte) HAL_UART_Receive_IT(huart, adrByte, 1);
-}
-//------------------------------------------------------------------------------------------
-void fConv(float in, conv_t *ic)
-{
-	float dro = (in - (uint16_t)in) * 100;
-	ic->cel = (uint16_t)in;
-	ic->dro = (uint16_t)dro;
-}
-//------------------------------------------------------------------------------------------
-void mkMsgData(result_t *from, iresult_t *to)
-{
-conv_t tmp;
-
-	to->chip = from->chip;
-	fConv(from->humi, &tmp); to->humi.cel = tmp.cel; to->humi.dro = tmp.dro;
-	fConv(from->lux, &tmp);  to->lux.cel  = tmp.cel; to->lux.dro  = tmp.dro;
-	fConv(from->pres, &tmp); to->pres.cel = tmp.cel; to->pres.dro = tmp.dro;
-	fConv(from->temp, &tmp); to->temp.cel = tmp.cel; to->temp.dro = tmp.dro;
 }
 //------------------------------------------------------------------------------------------
 void AtParamInit()
@@ -1484,12 +1471,14 @@ int8_t parse_gps(char *in, s_gps_t *data)
 							break;
 						case 3://latitude
 							data->latitude = (float)atof(tmp);
+							data->latitude /= 100;
 							break;
 						case 4://latc
 							if (tmp[0] == 'S') data->ns = true;
 							break;
 						case 5://longitude
 							data->longitude = (float)atof(tmp);
+							data->longitude /= 100;
 							break;
 						case 6://lonc
 							if (tmp[0] == 'W') data->ew = true;
@@ -1681,26 +1670,23 @@ int8_t makeDataString(const s_data_t *data, char *buf, const int max_len_buf)
         len += sprintf(tmp, "\t\"Dir\": %.2f,\r\n", data->rmc.dir);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        iresult_t evt;
-        mkMsgData((result_t *)&data->sens, &evt);
-        len += sprintf(tmp, "\t\"Press\": %u.%u,\r\n", evt.pres.cel, evt.pres.dro);
+        len += sprintf(tmp, "\t\"Press\": %.2f,\r\n", data->sens.pres);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"Temp\": %u.%u,\r\n", evt.temp.cel, evt.temp.dro);
+        len += sprintf(tmp, "\t\"Temp\": %.2f,\r\n", data->sens.temp);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
         if (data->sens.chip == BME280_SENSOR) {
-        	len += sprintf(tmp, "\t\"Lux\": %u.%u,\r\n", evt.lux.cel, evt.lux.dro);
+        	len += sprintf(tmp, "\t\"Lux\": %.2f,\r\n", data->sens.lux);
         } else {
-        	len += sprintf(tmp, "\t\"Lux\": %u.%u\r\n", evt.lux.cel, evt.lux.dro);
+        	len += sprintf(tmp, "\t\"Lux\": %.2f\r\n", data->sens.lux);
         }
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
         if (data->sens.chip == BME280_SENSOR) {
-        	len += sprintf(tmp, "\t\"Humi\": %u.%u\r\n", evt.humi.cel, evt.humi.dro);
+        	len += sprintf(tmp, "\t\"Humi\": %.2f\r\n", data->sens.humi);
         	if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
         }
-
 done:
 
 	strcat(buf, "}");
@@ -1708,7 +1694,7 @@ done:
 	return 0;
 }
 //------------------------------------------------------------------------------------------
-int8_t makeInfString(const s_inf_t *data, char *buf, const int max_len_buf)
+int8_t makeInfString(const s_data_t *data, char *buf, const int max_len_buf)
 {
 	if (!data || !buf) return 1;
 
@@ -1748,59 +1734,78 @@ int8_t makeInfString(const s_inf_t *data, char *buf, const int max_len_buf)
         }
 
         len += sprintf(tmp, "\t\"UTC\": \"%02u.%02u.%02u %02u:%02u:%02u.%03u\",\r\n",
-        				data->utc.day, data->utc.mon, data->utc.year, data->utc.hour, data->utc.min, data->utc.sec, data->utc.ms);
+        				data->inf.utc.day, data->inf.utc.mon, data->inf.utc.year,
+						data->inf.utc.hour, data->inf.utc.min, data->inf.utc.sec, data->inf.utc.ms);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"Run\": %u,\r\n", data->run);
+        len += sprintf(tmp, "\t\"Run\": %u,\r\n", data->inf.run);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"Status\": \"%s\",\r\n", nameValid[data->status&1]);
+        len += sprintf(tmp, "\t\"Status\": \"%s\",\r\n", nameValid[data->inf.status&1]);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"Latitude\": %f,\r\n", data->latitude);
+        len += sprintf(tmp, "\t\"Latitude\": %f,\r\n", data->inf.latitude);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"Longitude\": %f,\r\n", data->longitude);
+        len += sprintf(tmp, "\t\"Longitude\": %f,\r\n", data->inf.longitude);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"Altitude\": %d,\r\n", data->altitude);
+        len += sprintf(tmp, "\t\"Altitude\": %d,\r\n", data->inf.altitude);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"Speed\": %.2f,\r\n", data->speed);
+        len += sprintf(tmp, "\t\"Speed\": %.2f,\r\n", data->inf.speed);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"Dir\": %.2f,\r\n", data->dir);
+        len += sprintf(tmp, "\t\"Dir\": %.2f,\r\n", data->inf.dir);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"Mode\": %u,\r\n", data->mode);
+        len += sprintf(tmp, "\t\"Mode\": %u,\r\n", data->inf.mode);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"HDOP\": %.2f,\r\n", data->HDOP);
+        len += sprintf(tmp, "\t\"HDOP\": %.2f,\r\n", data->inf.HDOP);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"PDOP\": %.2f,\r\n", data->PDOP);
+        len += sprintf(tmp, "\t\"PDOP\": %.2f,\r\n", data->inf.PDOP);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"VDOP\": %.2f,\r\n", data->VDOP);
+        len += sprintf(tmp, "\t\"VDOP\": %.2f,\r\n", data->inf.VDOP);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"SatGPSV\": %u,\r\n", data->GPSsatV);
+        len += sprintf(tmp, "\t\"SatGPSV\": %u,\r\n", data->inf.GPSsatV);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"SatGNSSU\": %u,\r\n", data->GNSSsatU);
+        len += sprintf(tmp, "\t\"SatGNSSU\": %u,\r\n", data->inf.GNSSsatU);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"SatGLONASSV\": %u,\r\n", data->GLONASSsatV);
+        len += sprintf(tmp, "\t\"SatGLONASSV\": %u,\r\n", data->inf.GLONASSsatV);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"dBHz\": %u,\r\n", data->dBHz);
+        len += sprintf(tmp, "\t\"dBHz\": %u,\r\n", data->inf.dBHz);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"HPA\": %.2f,\r\n", data->HPA);
+        len += sprintf(tmp, "\t\"HPA\": %.2f,\r\n", data->inf.HPA);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
-        len += sprintf(tmp, "\t\"VPA\": %.2f\r\n", data->VPA);
+        len += sprintf(tmp, "\t\"VPA\": %.2f,\r\n", data->inf.VPA);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Press\": %.2f,\r\n", data->sens.pres);
+                if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        len += sprintf(tmp, "\t\"Temp\": %.2f,\r\n", data->sens.temp);
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        if (data->sens.chip == BME280_SENSOR) {
+        	len += sprintf(tmp, "\t\"Lux\": %.2f,\r\n", data->sens.lux);
+        } else {
+        	len += sprintf(tmp, "\t\"Lux\": %.2f\r\n", data->sens.lux);
+        }
+        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+
+        if (data->sens.chip == BME280_SENSOR) {
+        	len += sprintf(tmp, "\t\"Humi\": %.2f\r\n", data->sens.humi);
+        	if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+        }
 
 done:
 
@@ -1853,9 +1858,7 @@ void StartDefTask(void *argument)
 	uint8_t row;
 	char toScreen[SCREEN_SIZE];
 	result_t levt;
-	iresult_t evt;
 	uint8_t show;
-
 	uint8_t new = 0;
 
 	/* Infinite loop */
@@ -1871,11 +1874,13 @@ void StartDefTask(void *argument)
   				if (!parse_gps(msgNMEA, &one)) {
   					flags.msg_end = 1;
   					memcpy((uint8_t *)&allData.rmc, (uint8_t *)&one, sizeof(s_gps_t));
+  					allData.type = 0;
   					new |= 2;
   				} else if (!parse_inf(msgNMEA, &inf)) {
-  					if (!makeInfString(&inf, msgNMEA, sizeof(msgNMEA) - 1)) {
-  						if (flags.gps_log_show) Report(false, "%s (size=%d)\r\n", msgNMEA, strlen(msgNMEA));
-  					}
+  					flags.msg_end = 1;
+  					memcpy((uint8_t *)&allData.inf, (uint8_t *)&inf, sizeof(s_inf_t));
+  					allData.type = 1;
+  					new |= 2;
   				}
   			}
   		}
@@ -1888,31 +1893,29 @@ void StartDefTask(void *argument)
   			if (osMessageQueueGet(mailQueueHandle, (void *)&levt, NULL, 50) == osOK) {
   				memcpy((uint8_t *)&allData.sens, (uint8_t *)&levt, sizeof(result_t));
   				new |= 1;
-  				mkMsgData(&levt, &evt);
                 show = flags.i2c_log_show;
   				row = 6;
-  				sprintf(toScreen, "mmHg : %u.%02u\nDegC : %u.%02u", evt.pres.cel, evt.pres.dro, evt.temp.cel, evt.temp.dro);
-  				switch (evt.chip) {
+  				sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", levt.pres, levt.temp);
+  				switch (levt.chip) {
   					case BMP280_SENSOR :
-  						sprintf(toScreen, "mmHg : %u.%02u\nDegC : %u.%02u", evt.pres.cel, evt.pres.dro, evt.temp.cel, evt.temp.dro);
-  						if (show) sprintf(DefBuf, "BMP280: Press=%u.%02u mmHg, Temp=%u.%02u DegC; BH1750: Lux=%u.%02u lx\r\n",
-  										evt.pres.cel, evt.pres.dro, evt.temp.cel, evt.temp.dro, evt.lux.cel, evt.lux.dro);
-  					break;
+  						sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", levt.pres, levt.temp);
+  						if (show) sprintf(DefBuf, "BMP280: Press=%.2f mmHg, Temp=%.2f DegC; BH1750: Lux=%.2f lx\r\n",
+  										levt.pres, levt.temp, levt.lux);
+  				  	break;
   					case BME280_SENSOR :
   						row = 5;
-  						sprintf(toScreen, "mmHg : %u.%02u\nDegC : %u.%02u\nHumi: %u.%02u %%rH",
-  										evt.pres.cel, evt.pres.dro, evt.temp.cel, evt.temp.dro, evt.humi.cel, evt.humi.dro);
-  				  		if (show) sprintf(DefBuf, "BME280: Press=%u.%02u mmHg, Temp=%u.%02u DegC Humidity=%u.%02u %%rH; BH1750: Lux=%u.%02u lx\r\n",
-  				  						evt.pres.cel, evt.pres.dro, evt.temp.cel, evt.temp.dro, evt.humi.cel, evt.humi.dro, evt.lux.cel, evt.lux.dro);
+  						sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f\nHumi: %.2f %%rH", levt.pres, levt.temp, levt.humi);
+  				  		if (show) sprintf(DefBuf, "BME280: Press=%.2f mmHg, Temp=%.2f DegC Humidity=%.2f %%rH; BH1750: Lux=%.2f lx\r\n",
+  				  						levt.pres, levt.temp, levt.humi, levt.lux);
   				  	break;
-  				  		default : {
-  				  			sprintf(toScreen, "\n\n");
-  				  			if (show) sprintf(DefBuf, "Unknown chip; BH1750: Lux=%u.%02u lx\r\n", evt.lux.cel, evt.lux.dro);
-  				  		}
+  					default : {
+  						sprintf(toScreen, "\n\n");
+  						if (show) sprintf(DefBuf, "Unknown chip; BH1750: Lux=%.2f lx\r\n", levt.lux);
+  					}
   				}
   				//
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-  				sprintf(toScreen+strlen(toScreen), "\nLux  : %u.%02u", evt.lux.cel, evt.lux.dro);
+  				sprintf(toScreen+strlen(toScreen), "\nLux  : %.2f", levt.lux);
 	#ifdef SET_OLED_I2C
   				if (!i2cError) i2c_ssd1306_text_xy(toScreen, 1, row);//send string to screen
 	#endif
@@ -1947,7 +1950,7 @@ void StartDefTask(void *argument)
   		//-------------------------------------------------------------------------
   		if (new == 3) {
   			new = 0;
-  			osMessageQueuePut(mqData, (void *)&allData, 0, 10);
+  			osMessageQueuePut(mqData, (void *)&allData, 0, 20);
   		}
   		//-------------------------------------------------------------------------
 
@@ -2079,6 +2082,7 @@ void StartAtTask(void *argument)
 	msgGPRS[0] = 0;
 	char cmd[80];
 	int dl;
+	int8_t res = -1;
 
 	char toScr[SCREEN_SIZE];
 
@@ -2185,16 +2189,22 @@ void StartAtTask(void *argument)
 						}
 					}
 				}
-				if (osMessageQueueGet(mqData, (void *)&aData, NULL, 10) == osOK) {
-					if (!makeDataString(&aData, msgGPRS, sizeof(msgGPRS) - 3)) {
+				if (osMessageQueueGet(mqData, (void *)&aData, NULL, 20) == osOK) {
+					if (!aData.type) res = makeDataString(&aData, msgGPRS, sizeof(msgGPRS) - 3);
+								else res = makeInfString(&aData, msgGPRS, sizeof(msgGPRS) - 3);
+					if (!res) {
 						strcat(msgGPRS, "\r\n");
+						dl = strlen(msgGPRS);
 						if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
-							sprintf(cmd, "AT+CIPSEND=%d\r\n", strlen(msgGPRS));
+							sprintf(cmd, "AT+CIPSEND=%d\r\n", dl);
 							yes = true;
 							buff = cmd;
 							gprs_stat.next_send = 0;
 						} else {
-							if (flags.combo_log_show) Report(true, "%s", msgGPRS);
+							if (flags.combo_log_show) {
+								msgGPRS[dl - 2] = 0;
+								Report(true, "%s (%d)\r\n", msgGPRS, dl - 2);
+							}
 						}
 					}
 					//
@@ -2451,6 +2461,19 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		  sprintf(scrBuf, "%c %s", pic, conStatus[gprs_stat.connect]);
 		  toDisplay((const char *)scrBuf, 0, 3, true);
 #endif
+		  //----------------------------------------------------------------------------------
+		  rmc5++;
+		  if (flags.msg_begin) {
+			  flags.msg_begin = 0;
+			  rmc5 = wait_gps_def;
+		  }
+		  if (rmc5 >= wait_gps_def) {
+			  if (gprs_stat.next_send && !flags.auto_cmd) {
+				  rmc5 = 0;
+				  flags.inf = 1;
+			  }
+		  } else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
+		  //----------------------------------------------------------------------------------
 	  }
 
 	  inc_hsCounter();

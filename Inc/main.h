@@ -64,23 +64,6 @@ typedef struct {
 #pragma pack(pop)
 
 #pragma pack(push,1)
-typedef struct {
-	uint16_t cel;
-	uint16_t dro;
-} conv_t;
-#pragma pack(pop)
-
-#pragma pack(push,1)
-typedef struct {
-	uint8_t chip;
-	conv_t temp;// DegC
-	conv_t pres;// mmHg
-	conv_t humi;// %rH
-	conv_t lux;// lux
-} iresult_t;
-#pragma pack(pop)
-
-#pragma pack(push,1)
 typedef struct q_msg_t {
 	int8_t id;
 	char *adr;
@@ -195,9 +178,10 @@ typedef struct {
 
 #pragma pack(push,1)
 typedef struct {
+	uint8_t type;
 	result_t sens;
 	s_gps_t rmc;
-	//s_inf_t inf;
+	s_inf_t inf;
 } s_data_t;//allData;
 #pragma pack(pop)
 
