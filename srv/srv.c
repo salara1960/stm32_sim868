@@ -64,6 +64,7 @@ const char *SeqNum = "SeqNum";
 //const char *SensSN = "SensSeqNum";
 //const char *GpsSN  = "GpsSeqNum";
 const char *DataSN = "DataSeqNum";
+const char *InfSN = "InfSeqNum";
 
 //------------------------------------------------------------------------
 char *TimeNowPrn(char *ts)
@@ -192,7 +193,13 @@ char *stx = NULL;
     if (tmp) {
         ret = json_integer_value(tmp);
         strcpy(packName, DataSN);
-    } else strcpy(packName, "Unknown");
+    } else {
+        tmp = json_object_get(obj, InfSN);
+        if (tmp) {
+            ret = json_integer_value(tmp);
+            strcpy(packName, InfSN);
+        } else strcpy(packName, "Unknown");
+    }
 
     if (obj) json_decref(obj);
 
@@ -242,7 +249,10 @@ char numName[64];
 
             if (ready) {
                 ready = 0;
-                if (from_client[strlen(from_client)-1] != '\n') strcat(from_client, "\n");
+                //if (from_client[strlen(from_client)-1] != '\n') strcat(from_client, "\n");
+                uki = strstr(from_client, "}\r\n");
+                if (uki) *(uki + 1) = 0;
+                strcat(from_client, "\n");
                 print_cdr(from_client, 1);
                 //
                 numName[0] = 0;

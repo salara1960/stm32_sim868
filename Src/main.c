@@ -75,7 +75,8 @@
 //const char *ver = "ver 2.5rc3";//13.06.2019 - minor changes : edit screen font (0x14, 0x15)
 //const char *ver = "ver 2.5rc4";//01.07.2019 - minor changes : add sim number, set one config struct for jfes
 //const char *ver = "ver 2.6rc1";//02.07.2019 - major changes : remove jfes library (reason - memory leak in library)
-const char *ver = "ver 2.7rc1";//02.07.2019 - major changes : unused gps serial port(USART2), used AT+CGNSINF command for getting gps data
+//const char *ver = "ver 2.7rc1";//02.07.2019 - major changes : unused gps serial port(USART2), used AT+CGNSINF command for getting gps data
+const char *ver = "ver 2.7rc2";//03.07.2019 - major changes : remove USART2 and GSM_STATUS_pin (PA2) from project
 
 
 /*
@@ -115,7 +116,6 @@ DMA_HandleTypeDef hdma_spi3_tx;
 TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart4;
-UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_uart4_tx;
 DMA_HandleTypeDef hdma_usart3_tx;
@@ -145,7 +145,6 @@ I2C_HandleTypeDef *portBMP;
 #endif
 I2C_HandleTypeDef *portBH;
 UART_HandleTypeDef *portAT;//huart4;
-UART_HandleTypeDef *portGPS;//huart2;
 UART_HandleTypeDef *portLOG;//huart3;
 #ifdef SET_OLED_SPI
 	SPI_HandleTypeDef *portOLED;//hspi3;
@@ -163,14 +162,8 @@ static char RxBuf[MAX_UART_BUF];
 volatile uint8_t rx_uk;
 uint8_t lRxByte;
 
-static const char *_extRMC = "$GNRMC";
-//static const char *_extGGA = "$GNGGA";
 
-static char GpsRxBuf[MAX_UART_BUF];
-volatile uint8_t gps_rx_uk;
-uint8_t gRxByte;
-uint32_t rmcCounter = 0;
-uint8_t rmc5 = 6;
+volatile uint8_t rmc5 = 8;//6;
 char msgNMEA[MAX_UART_BUF] = {0};
 static s_msg_t q_gps;
 const char *nameValid[] = {"Invaid", "Valid"};
@@ -182,10 +175,11 @@ static char AtRxBuf[MAX_UART_BUF];
 volatile uint8_t at_rx_uk;
 uint8_t aRxByte;
 uint8_t adone = 0;
-uint32_t atCounter = 0;
+//uint32_t atCounter = 0;
 char msgAT[MAX_UART_BUF] = {0};
 static s_msg_t q_at;
 static uint8_t evt_gsm = 0;
+static bool ackYes = 0;
 
 static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
@@ -217,7 +211,7 @@ const char *cmds[] = {
 };
 
 const char *sim_num = "9062100000";
-const char *srv_adr_def = "127.0.0.1";
+const char *srv_adr_def = "aaa.bbb.ccc.ddd";
 const uint16_t srv_port_def = 9192;
 static char srv_adr[64] = {0};
 static uint16_t srv_port;
@@ -230,7 +224,6 @@ uint8_t *adrByte = NULL;
 volatile s_flags flags = {0};
 volatile s_gprs_stat gprs_stat = {0};
 
-s_data_t allData;
 osMessageQueueId_t mqData;
 uint32_t dataCounter = 0;
 uint32_t infCounter = 0;
@@ -251,7 +244,6 @@ static void MX_I2C1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_UART4_Init(void);
 static void MX_USART3_UART_Init(void);
-static void MX_USART2_UART_Init(void);
 static void MX_SPI3_Init(void);
 static void MX_RTC_Init(void);
 void StartDefTask(void *argument); // for v2
@@ -259,7 +251,7 @@ void StartSensTask(void *argument); // for v2
 void StartAtTask(void *argument); // for v2
 
 /* USER CODE BEGIN PFP */
-void *getMem(size_t sz);
+
 void Report(bool addTime, const char *fmt, ...);
 void errLedOn(const char *from);
 void gsmONOFF(uint32_t tw);
@@ -309,7 +301,6 @@ int main(void)
   MX_TIM2_Init();
   MX_UART4_Init();
   MX_USART3_UART_Init();
-  MX_USART2_UART_Init();
   MX_SPI3_Init();
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
@@ -332,7 +323,6 @@ int main(void)
 #endif
   portBH  = &hi2c1;//BH1750
   portAT  = &huart4;//AT
-  portGPS = &huart2;//GPS
   portLOG = &huart3;//LOG
 #ifdef SET_OLED_SPI
   portOLED = &hspi3;//SPI3 - OLED SSD1306
@@ -717,41 +707,6 @@ static void MX_UART4_Init(void)
 }
 
 /**
-  * @brief USART2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART2_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART2_Init 0 */
-	//
-	//		GPS port
-	//
-  /* USER CODE END USART2_Init 0 */
-
-  /* USER CODE BEGIN USART2_Init 1 */
-
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART2_Init 2 */
-
-  /* USER CODE END USART2_Init 2 */
-
-}
-
-/**
   * @brief USART3 Initialization Function
   * @param None
   * @retval None
@@ -822,7 +777,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, LED_GREEN_Pin|LED_ORANGE_Pin|LED_RED_Pin|LED_BLUE_Pin, GPIO_PIN_RESET);
@@ -838,12 +793,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(USER_IN_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : GSM_STAT_Pin */
-  GPIO_InitStruct.Pin = GSM_STAT_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GSM_STAT_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : GSM_KEY_Pin */
   GPIO_InitStruct.Pin = GSM_KEY_Pin;
@@ -875,10 +824,6 @@ static void MX_GPIO_Init(void)
 
 }
 
-//-----------------------------------------------------------------------------------------
-//-----------------------------------------------------------------------------------------
-//-----------------------------------------------------------------------------------------
-
 /* USER CODE BEGIN 4 */
 
 //-----------------------------------------------------------------------------------------
@@ -892,11 +837,6 @@ uint8_t ret = 0;
     return ret;
 }
 #endif
-//------------------------------------------------------------------------------------------
-bool getVIO()
-{
-	return ((bool)!HAL_GPIO_ReadPin(GSM_STAT_GPIO_Port, GSM_STAT_Pin));
-}
 //------------------------------------------------------------------------------------------
 uint8_t hextobin(char st, char ml)
 {
@@ -913,11 +853,11 @@ uint8_t a, b, c, i;
 void gsmONOFF(uint32_t twait)
 {
 	flags.gps_log_show = flags.i2c_log_show = flags.combo_log_show = 0;
-	Report(true, "GSM_KEY set to 0 (vio=%u)\r\n", getVIO());
+	Report(true, "GSM_KEY set to 0\r\n");
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);//set 0
 	HAL_Delay(twait);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
-	Report(true, "GSM_KEY set to 1 (vio=%u)\r\n", getVIO());
+	Report(true, "GSM_KEY set to 1\r\n");
 }
 //-----------------------------------------------------------------------------
 void ClearRxBuf()
@@ -1228,38 +1168,6 @@ int i31;
 		*(srv_adr + i31) = 0;
 	}
 }
-//------------------------------------------------------------------------------
-void getNMEA()
-{
-	GpsRxBuf[gps_rx_uk++] = (char)gRxByte;
-	if (gRxByte == 0x0a) {//end of line
-		char *uk = strstr(GpsRxBuf, _extRMC);//const char *_extRMC = "$GNRMC";
-		//if (!uk) uk = strstr(GpsRxBuf, _extGGA);//const char *_extGGA = "$GNGGA";
-		if (uk) {
-			rmc5++;
-			if (flags.msg_begin) {
-				flags.msg_begin = 0;
-				rmc5 = wait_gps_def;
-				//flags.msg_end = 1;
-			}
-			if (rmc5 >= wait_gps_def) {
-				if (gprs_stat.next_send && !flags.auto_cmd) {
-					rmc5 = 0;
-					if (LoopAll) {
-						int len = strlen(GpsRxBuf);
-						char *buff = (char *)calloc(1, len + 1);
-						memcpy(buff, GpsRxBuf, len);
-						int8_t sta = putQ(buff, &q_gps);
-						if (sta < 0) free(buff);//error !
-								else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);//add to q_gps OK
-					}
-				}
-			} else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
-		}
-		gps_rx_uk = 0;
-		memset(GpsRxBuf, 0, MAX_UART_BUF);
-	}
-}
 //------------------------------------------------------------------------------------------
 void getAT()
 {
@@ -1281,6 +1189,7 @@ void getAT()
 						if (buff2) {
 							memcpy(buff2, AtRxBuf, len);
 							if (putQ(buff2, &q_gps) < 0) free(buff2);
+							//else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);//add to q_gps OK
 						}
 					}
 				}
@@ -1316,6 +1225,7 @@ void LogData()
 		} else {
 				if (strstr(RxBuf, "INF:")) {
 					flags.inf = 1; priz = 1;
+					//flags.msg_begin = 1;
 				} else if (strstr(RxBuf, "GET:")) {
 					flags.msg_begin = 1;
 					priz = true;
@@ -1329,8 +1239,6 @@ void LogData()
 				} else if (strstr(RxBuf, "DIS:")) {
 					flags.disconnect = 1; priz = true;
 					con_dis = false;
-				} else if (strstr(RxBuf, "VIO:")) {
-					flags.vio = 1; priz = true;
 				} else if (strstr(RxBuf, "ON:")) {
 					evt_gsm = 1; priz = true;
 				} else if (strstr(RxBuf, "OFF:")) {
@@ -1355,7 +1263,6 @@ void LogData()
 				} else  if (strstr(RxBuf, "STOP:")) {
 					flags.stop = 1;
 				} else {
-
 					if (strstr(RxBuf, "AT")) {
 						strcat(RxBuf, "\n"); priz = true;
 					} else {
@@ -1402,9 +1309,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	if (huart->Instance == UART4) {// portAT - at_commands
 		getAT();
 		adrByte = &aRxByte;
-//	} else if (huart->Instance == USART2) {// portGPS - gps_nmea_messages
-//		getNMEA();
-//		adrByte = &gRxByte;
 	} else if (huart->Instance == USART3 ) {// portLOG - log
 		LogData();
 		adrByte = &lRxByte;
@@ -1424,90 +1328,11 @@ void AtParamInit()
 //------------------------------------------------------------------------------------------
 void GpsParamInit()
 {
-	gps_rx_uk = 0;
+//	gps_rx_uk = 0;
 	rmc5 = 1;
-	memset(GpsRxBuf, 0, MAX_UART_BUF);
+//	memset(GpsRxBuf, 0, MAX_UART_BUF);
 	initQ(&q_gps);
-	HAL_UART_Receive_IT(portGPS, (uint8_t *)&gRxByte, 1);//GPS
-}
-//------------------------------------------------------------------------------------------
-int8_t parse_gps(char *in, s_gps_t *data)
-{
-//$--RMC,hhmmss.sss,x,llll.lll,a,yyyyy.yyy,a,x.x,u.u,xxxxxx,,,v*hh<CR><LF>
-//$GNRMC,001805.868,V,,,,,0.00,0.00,060180,,,N*56
-
-	char *uk = NULL, *uks = NULL, *uke = NULL, *porog = in + strlen(in);
-	uks = strstr(in, "$GNRMC,");
-	if (!uks) return 1;
-	uks += 7;
-	porog += 7;
-	char tmp[32];
-	uint8_t cnt = 0, len = 0;
-	memset((uint8_t *)data, 0, sizeof(s_gps_t));
-	while (1) {
-		uke = strchr(uks, ',');
-		if (!uke) uke = strchr(uks, '\r');
-		if (uke) {//hhmmss.sss
-			if (uke <= porog) {
-				cnt++;
-				len = (uke - uks);
-				if (len > 0) {
-					memset(tmp, 0, 32);
-					memcpy(tmp, uks, len);
-					switch (cnt) {
-						case 1://time
-							uk = strchr(tmp, '.');
-							if (uk) {
-								if (strlen(tmp) == 10) {
-									data->ms = atoi(uk + 1);   *uk    = '\0';
-									data->sec = atoi(&tmp[4]); tmp[4] = '\0';
-									data->min = atoi(&tmp[2]); tmp[2] = '\0';
-									data->hour = atoi(tmp);
-								}
-							}
-							break;
-						case 2://good
-							if (tmp[0] == 'A') data->good = true;
-							break;
-						case 3://latitude
-							data->latitude = (float)atof(tmp);
-							data->latitude /= 100;
-							break;
-						case 4://latc
-							if (tmp[0] == 'S') data->ns = true;
-							break;
-						case 5://longitude
-							data->longitude = (float)atof(tmp);
-							data->longitude /= 100;
-							break;
-						case 6://lonc
-							if (tmp[0] == 'W') data->ew = true;
-							break;
-						case 7://speed
-							data->speed = (float)atof(tmp);
-							break;
-						case 8://dir
-							data->dir = (float)atof(tmp);
-							break;
-						case 9://UTC date
-							if (strlen(tmp) == 6) {
-								data->year = atoi(&tmp[4]); tmp[4] = '\0';
-								data->mon  = atoi(&tmp[2]); tmp[2] = '\0';
-								data->day = atoi(tmp);
-							}
-							break;
-						/*case 12://mode+crc
-							data->mode = tmp[0];
-							uk = strchr(tmp, '*');
-							if (uk) data->crc = hextobin(*(uk + 1), *(uk + 2));
-							break;*/
-					}
-				}
-				uks = uke + 1;
-			} else break;
-		} else break;
-	}
-	return 0;
+//	HAL_UART_Receive_IT(portGPS, (uint8_t *)&gRxByte, 1);//GPS
 }
 //------------------------------------------------------------------------------------------
 int8_t parse_inf(char *in, s_inf_t *inf)
@@ -1608,92 +1433,6 @@ int8_t parse_inf(char *in, s_inf_t *inf)
 	return 0;
 }
 //------------------------------------------------------------------------------------------
-int8_t makeDataString(const s_data_t *data, char *buf, const int max_len_buf)
-{
-	if (!data || !buf) return 1;
-
-	char tmp[64];
-	int len = 4;
-	strcpy(buf, "{\r\n");
-
-		len += sprintf(tmp, "\t\"DataSeqNum\": %lu,\r\n", ++dataCounter);
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-		len += sprintf(tmp, "\t\"MsgType\": \"COMBO\",\r\n");
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-		len += sprintf(tmp, "\t\"devID\": \"%s\",\r\n", devID);
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-		len += sprintf(tmp, "\t\"DevName\": \"%s\",\r\n", dev_name);
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-		len += sprintf(tmp, "\t\"SimNumber\": \"%s\",\r\n", sim_num);
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-		len += sprintf(tmp, "\t\"DevTime\": %lu,\r\n", get_secCounter());
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-		len += sprintf(tmp, "\t\"FreeMem\": %u,\r\n", xPortGetFreeHeapSize());
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        if (setDate) {
-#ifdef SET_RTC_TMR
-            uint32_t ep = getSecRTC(&hrtc);
-#else
-            uint32_t ep = get_extDate();
-#endif
-            len += sprintf(tmp, "\t\"EpochTime\": %lu,\r\n", ep);
-            if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-        }
-
-        len += sprintf(tmp, "\t\"UTC\": \"%02u.%02u.%02u %02u:%02u:%02u.%03u\",\r\n",
-        				data->rmc.day, data->rmc.mon, data->rmc.year, data->rmc.hour, data->rmc.min, data->rmc.sec, data->rmc.ms);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Status\": \"%s\",\r\n", nameValid[data->rmc.good]);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        float flo = data->rmc.latitude;
-        if (data->rmc.ns) flo *= -1.0;
-        len += sprintf(tmp, "\t\"Latitude\": %f,\r\n", flo);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        flo = data->rmc.longitude;
-        if (data->rmc.ew) flo *= -1.0;
-        len += sprintf(tmp, "\t\"Longitude\": %f,\r\n", flo);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Speed\": %.2f,\r\n", data->rmc.speed);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Dir\": %.2f,\r\n", data->rmc.dir);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Press\": %.2f,\r\n", data->sens.pres);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Temp\": %.2f,\r\n", data->sens.temp);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        if (data->sens.chip == BME280_SENSOR) {
-        	len += sprintf(tmp, "\t\"Lux\": %.2f,\r\n", data->sens.lux);
-        } else {
-        	len += sprintf(tmp, "\t\"Lux\": %.2f\r\n", data->sens.lux);
-        }
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        if (data->sens.chip == BME280_SENSOR) {
-        	len += sprintf(tmp, "\t\"Humi\": %.2f\r\n", data->sens.humi);
-        	if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-        }
-done:
-
-	strcat(buf, "}");
-
-	return 0;
-}
-//------------------------------------------------------------------------------------------
 int8_t makeInfString(const s_data_t *data, char *buf, const int max_len_buf)
 {
 	if (!data || !buf) return 1;
@@ -1758,10 +1497,10 @@ int8_t makeInfString(const s_data_t *data, char *buf, const int max_len_buf)
 
         len += sprintf(tmp, "\t\"Dir\": %.2f,\r\n", data->inf.dir);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
+/*
         len += sprintf(tmp, "\t\"Mode\": %u,\r\n", data->inf.mode);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
+*/
         len += sprintf(tmp, "\t\"HDOP\": %.2f,\r\n", data->inf.HDOP);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
@@ -1779,7 +1518,7 @@ int8_t makeInfString(const s_data_t *data, char *buf, const int max_len_buf)
 
         len += sprintf(tmp, "\t\"SatGLONASSV\": %u,\r\n", data->inf.GLONASSsatV);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
+/*
         len += sprintf(tmp, "\t\"dBHz\": %u,\r\n", data->inf.dBHz);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
@@ -1788,7 +1527,7 @@ int8_t makeInfString(const s_data_t *data, char *buf, const int max_len_buf)
 
         len += sprintf(tmp, "\t\"VPA\": %.2f,\r\n", data->inf.VPA);
         if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
+*/
         len += sprintf(tmp, "\t\"Press\": %.2f,\r\n", data->sens.pres);
                 if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
 
@@ -1852,12 +1591,12 @@ void StartDefTask(void *argument)
 	osDelay(1000);
 
 	GpsParamInit();
-	s_gps_t one;
 	s_inf_t inf;
-
-	uint8_t row;
-	char toScreen[SCREEN_SIZE];
 	result_t levt;
+	s_data_t iData;
+
+	char toScreen[SCREEN_SIZE];
+	uint8_t row;
 	uint8_t show;
 	uint8_t new = 0;
 
@@ -1871,15 +1610,9 @@ void StartDefTask(void *argument)
   		if (!flags.auto_cmd) {
   			if (getQ(msgNMEA, &q_gps) >= 0) {
   				if (flags.gps_log_show) Report(true, msgNMEA);
-  				if (!parse_gps(msgNMEA, &one)) {
+  				if (!parse_inf(msgNMEA, &inf)) {
   					flags.msg_end = 1;
-  					memcpy((uint8_t *)&allData.rmc, (uint8_t *)&one, sizeof(s_gps_t));
-  					allData.type = 0;
-  					new |= 2;
-  				} else if (!parse_inf(msgNMEA, &inf)) {
-  					flags.msg_end = 1;
-  					memcpy((uint8_t *)&allData.inf, (uint8_t *)&inf, sizeof(s_inf_t));
-  					allData.type = 1;
+  					memcpy((uint8_t *)&iData.inf, (uint8_t *)&inf, sizeof(s_inf_t));
   					new |= 2;
   				}
   			}
@@ -1891,7 +1624,7 @@ void StartDefTask(void *argument)
   		//--------------------------------------------------------------------------
   		if (mailQueueHandle) {
   			if (osMessageQueueGet(mailQueueHandle, (void *)&levt, NULL, 50) == osOK) {
-  				memcpy((uint8_t *)&allData.sens, (uint8_t *)&levt, sizeof(result_t));
+  				memcpy((uint8_t *)&iData.sens, (uint8_t *)&levt, sizeof(result_t));
   				new |= 1;
                 show = flags.i2c_log_show;
   				row = 6;
@@ -1949,8 +1682,9 @@ void StartDefTask(void *argument)
 
   		//-------------------------------------------------------------------------
   		if (new == 3) {
+  			HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//On led
   			new = 0;
-  			osMessageQueuePut(mqData, (void *)&allData, 0, 20);
+  			osMessageQueuePut(mqData, (void *)&iData, 0, 20);
   		}
   		//-------------------------------------------------------------------------
 
@@ -2060,16 +1794,20 @@ void StartAtTask(void *argument)
   /* USER CODE BEGIN StartAtTask */
 
 	AtParamInit();
-	HAL_Delay(1000);
+
+	HAL_Delay(500);
+
 	uint32_t tmps = 1250;
-	if (!getVIO()) gsmONOFF(tmps);
+	gsmONOFF(tmps);
+
+	HAL_Delay(500);
 
 	char *uki = msgCMD;
 	const char *buff = NULL;
 	uint8_t counter = 0;
 	uint32_t wait_ack = 0;
 	uint64_t new_cmds = 0, min_ms = 1, max_ms = 10, tms;
-	flags.imei_flag = flags.auto_cmd = flags.inf = 0;
+	flags.imei_flag = flags.inf = 0;
 	char *uk = NULL;
 	uint8_t cnt = 0, max_repeat = 8;
 	bool repeat = false;
@@ -2082,7 +1820,6 @@ void StartAtTask(void *argument)
 	msgGPRS[0] = 0;
 	char cmd[80];
 	int dl;
-	int8_t res = -1;
 
 	char toScr[SCREEN_SIZE];
 
@@ -2095,36 +1832,50 @@ void StartAtTask(void *argument)
 	toDisplay((const char *)toScr, 0, 2, false);
 #endif
 
-	uint8_t faza = 0, rx_faza = 0;
+
+	uint8_t rx_faza = 0;
+	uint8_t faza = 4;
+	wait_ack = get_tmr(3);
+	//uint8_t last_faza = faza;
+
+	ackYes = 0;
+
+	//counter = 0;
+	//cmdsInd = 0;
+	//cmdsDone = true;
+	//new_cmds = 0;
+	//flags.auto_cmd = 1;
 
 	/* Infinite loop */
 	while (LoopAll) {
 
 		switch (faza) {
 			case 0:
-				if (flags.auto_cmd) {
-					if (cmdsInd >= 0) {
-						if (cmdsInd >= cmdsMax) {
-							cmdsInd = -1;
-							flags.auto_cmd = 0;
-							flags.gps_log_show = flags.i2c_log_show = flags.combo_log_show = 1;
-						} else {
-							if (cmdsDone) {
-								if (check_hstmr(new_cmds)) {
-									buff = &cmds[cmdsInd][0];
-									Report(false, "%.*s", strlen(cmds[cmdsInd]), cmds[cmdsInd]);
-									faza = 1;
+				if (check_tmr(wait_ack)) {
+					wait_ack = 0;
+					if (flags.auto_cmd) {
+						if (cmdsInd >= 0) {
+							if (cmdsInd >= cmdsMax) {
+								cmdsInd = -1;
+								flags.auto_cmd = 0;
+								flags.gps_log_show = flags.i2c_log_show = flags.combo_log_show = 1;
+							} else {
+								if (cmdsDone) {
+									if (check_hstmr(new_cmds)) {
+										buff = &cmds[cmdsInd][0];
+										Report(false, "%.*s", strlen(cmds[cmdsInd]), cmds[cmdsInd]);
+										faza = 1;
+									}
 								}
 							}
 						}
-					}
-				} else {
-					if (cmdsDone && !flags.auto_cmd) {
-						if (getQ(msgCMD, &q_cmd) >= 0) {//send at command to sim868
-							buff = &msgCMD[0];
-							//Report(false, msgCMD);
-							faza = 1;
-						} else faza = 3;
+					} else {
+						if (cmdsDone && !flags.auto_cmd) {
+							if (getQ(msgCMD, &q_cmd) >= 0) {//send at command to sim868
+								buff = &msgCMD[0];
+								faza = 1;
+							} else faza = 3;
+						}
 					}
 				}
 			break;
@@ -2139,7 +1890,9 @@ void StartAtTask(void *argument)
 								(strstr(buff, "AT+CIICR")) || (strstr(buff, "AT+CGACT=")) ) {
 					wait_ack = get_tmr(45);//WAIT ACK 45 SEC
 				} else {
-					wait_ack = get_tmr(15);
+					//if (!cmdsInd)
+						wait_ack = get_tmr(5);
+							 //else wait_ack = get_tmr(15);
 				}
 				if (strstr(buff, "AT+GSN")) flags.imei_flag = 1;
 				if (strstr(buff, "AT+CIFSR")) flags.local_ip_flag = 1;
@@ -2152,13 +1905,13 @@ void StartAtTask(void *argument)
 					if (check_tmr(wait_ack)) {
 						wait_ack = 0;
 						cmdsDone = true;
-						if (getVIO()) {
+						if (ackYes) {
 							if (cmdsInd >= 0) {
 								cmdsInd++;
 								if (cmdsInd >= cmdsMax) cmdsInd = -1;
 												   else new_cmds = get_hstmr(min_ms);//250 ms
 							} else evt_gsm = 2;//OFF
-						} evt_gsm = 1;//ON
+						} else evt_gsm = 1;//ON
 					}
 				}
 				if (evt_gsm || flags.auto_cmd) faza = 0;
@@ -2190,9 +1943,7 @@ void StartAtTask(void *argument)
 					}
 				}
 				if (osMessageQueueGet(mqData, (void *)&aData, NULL, 20) == osOK) {
-					if (!aData.type) res = makeDataString(&aData, msgGPRS, sizeof(msgGPRS) - 3);
-								else res = makeInfString(&aData, msgGPRS, sizeof(msgGPRS) - 3);
-					if (!res) {
+					if (!makeInfString(&aData, msgGPRS, sizeof(msgGPRS) - 3)) {
 						strcat(msgGPRS, "\r\n");
 						dl = strlen(msgGPRS);
 						if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
@@ -2207,9 +1958,7 @@ void StartAtTask(void *argument)
 							}
 						}
 					}
-					//
-					//Report(true, "[%s] FreeMem:%u\r\n", __func__, xPortGetFreeHeapSize());
-					//
+					HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//Off led
 				}
 				if (gprs_stat.prompt && gprs_stat.connect) {
 					yes = true;
@@ -2220,8 +1969,11 @@ void StartAtTask(void *argument)
 					if (flags.inf) {
 						if (cmdsDone) {
 							flags.inf = 0;
-							yes = true;
-							buff = gpsINF;//AT+CGNSINF
+							if (onGNS) {
+								yes = true;
+								buff = gpsINF;//AT+CGNSINF
+								rmc5 = 0;
+							}
 						}
 					}
 				}
@@ -2240,7 +1992,13 @@ void StartAtTask(void *argument)
 				}
 			break;
 
-		}
+		}//switch (faza)
+
+		/*if (faza != last_faza) {
+			if (faza != 3) Report(true, "faza = %u last_faza = %u\r\n", faza, last_faza);
+			last_faza = faza;
+		}*/
+
 
 		//-----------------------------------------------------------------------------------
 		//							rx_data_from_module
@@ -2253,6 +2011,7 @@ void StartAtTask(void *argument)
 					wait_ack = get_tmr(4);
 					faza = 4;
 				} else if (strlen(msgAT)) {
+					ackYes = 1;
 					if (flags.local_ip_flag) {
 						flags.local_ip_flag = 0;
 						gprs_stat.init = 1;
@@ -2316,6 +2075,7 @@ void StartAtTask(void *argument)
 							gprs_stat.send_ok = gprs_stat.next_send = 1;
 							Report(true, "--- DISCONNECTED ---\r\n");
 							if (gprs_stat.try_disconnect) gprs_stat.try_disconnect = 0;
+							HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
 						}
 						if (strchr(msgAT, '>')) gprs_stat.prompt = 1; else gprs_stat.prompt = 0;
 						if (gprs_stat.try_connect) {
@@ -2326,6 +2086,7 @@ void StartAtTask(void *argument)
 								gprs_stat.try_connect = 0;
 								flags.msg_begin = 1;
 								con_dis = true;
+								HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);
 							}
 						}
 
@@ -2367,6 +2128,8 @@ void StartAtTask(void *argument)
 			gsmONOFF(tmps);
 			gprs_stat.init = gprs_stat.connect = 0;
 			flags.imei_flag = flags.auto_cmd = flags.inf = 0;
+			ackYes = 0;
+			HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
 		}
 
 		if (flags.srv) {
@@ -2376,11 +2139,6 @@ void StartAtTask(void *argument)
 			sprintf(toScr, "%s", srv_adr);
 			toDisplay((const char *)toScr, 0, 2, true);
 #endif
-		}
-
-		if (flags.vio) {
-			flags.vio = 0;
-			Report(true, "GSM VIO is %u\r\n", getVIO());
 		}
 
 		osDelay(2);
@@ -2442,7 +2200,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 #endif
 		  //------------------------------------------------------------------------------------------
 		  if (HAL_GPIO_ReadPin(USER_IN_GPIO_Port, USER_IN_Pin) == GPIO_PIN_SET) {//user key is pressed
-			  //if (!flags.stop) flags.stop = 1;
 			  if (!con_dis) {
 				  if (!flags.connect) flags.connect = 1;
 				  con_dis = true;
@@ -2451,9 +2208,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 				  con_dis = false;
 			  }
 		  }
-		  //------------------------------------------------------------------------------------------
-		  if (getVIO()) HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//gsm is on
-		  	  	   else HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//gsm is off
 		  //------------------------------------------------------------------------------------------
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 		  char pic = 0x14;
@@ -2472,7 +2226,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 				  rmc5 = 0;
 				  flags.inf = 1;
 			  }
-		  } else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
+		  }
 		  //----------------------------------------------------------------------------------
 	  }
 

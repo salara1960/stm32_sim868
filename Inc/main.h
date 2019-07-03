@@ -47,7 +47,7 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
-#undef SET_RTC_TMR
+//#define SET_RTC_TMR
 //#define SET_OLED_I2C
 #define SET_OLED_SPI
 
@@ -101,7 +101,6 @@ typedef struct {
 	unsigned restart:1;
 	unsigned stop:1;
 	unsigned imei_flag:1;
-	unsigned vio:1;
 	unsigned local_ip_flag:1;
 	unsigned connect:1;
 	unsigned disconnect:1;
@@ -110,31 +109,8 @@ typedef struct {
 	unsigned msg_end:1;
 	unsigned auto_cmd:1;
 	unsigned inf:1;
-	unsigned unused:1;
+	unsigned unused:2;
 } s_flags;
-#pragma pack(pop)
-
-//$--RMC,hhmmss.sss,x,llll.lll,a,yyyyy.yyy,a,x.x,u.u,xxxxxx,,,v*hh<CR><LF>
-//$GNRMC,001805.868,V,,,,,0.00,0.00,060180,,,N*56
-#pragma pack(push,1)
-typedef struct {
-	uint8_t hour;	//hh
-	uint8_t min;	//mm
-	uint8_t sec;	//ss
-	uint16_t ms;	//sss
-	bool good;		//x = 'V' - invalid, 'A' - valid
-	float latitude;	//llll.lll
-	bool ns;		//a - ‘N’ = North; ‘S’ = South
-	float longitude;//yyyy.yyy
-	bool ew;		//a - ‘E’ = East; ‘W’ = West
-	float speed;	//x.x - 0.00
-	float dir;		//u.u - 0.00
-	uint8_t day;	//xx - 06
-	uint8_t mon;	//xx - 01
-	uint8_t year;	//xx - 80
-//	char mode;		//v = ‘N’ = Data not valid, ‘A’ = Autonomous mode, ‘D’ = Differential mode, ‘E’ = Estimated (dead reckoning) mode
-//	uint8_t crc;
-} s_gps_t;
 #pragma pack(pop)
 
 #pragma pack(push,1)
@@ -178,9 +154,7 @@ typedef struct {
 
 #pragma pack(push,1)
 typedef struct {
-	uint8_t type;
 	result_t sens;
-	s_gps_t rmc;
 	s_inf_t inf;
 } s_data_t;//allData;
 #pragma pack(pop)
@@ -220,7 +194,7 @@ SPI_HandleTypeDef *portSPI;
 
 #define wait_sensor_def 32
 #define wait_gps_def wait_sensor_def - 2 //>> 1
-#define MAX_UART_BUF 704//640//512//480//400//384//256
+#define MAX_UART_BUF 640//512//480//400//384//256
 
 
 /* USER CODE END EM */
@@ -239,8 +213,6 @@ void Leds(bool act, uint16_t Pin);
 /* Private defines -----------------------------------------------------------*/
 #define USER_IN_Pin GPIO_PIN_0
 #define USER_IN_GPIO_Port GPIOA
-#define GSM_STAT_Pin GPIO_PIN_2
-#define GSM_STAT_GPIO_Port GPIOA
 #define GSM_KEY_Pin GPIO_PIN_3
 #define GSM_KEY_GPIO_Port GPIOA
 #define TX3_Pin GPIO_PIN_10
