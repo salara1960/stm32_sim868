@@ -76,8 +76,9 @@
 //const char *ver = "ver 2.5rc4";//01.07.2019 - minor changes : add sim number, set one config struct for jfes
 //const char *ver = "ver 2.6rc1";//02.07.2019 - major changes : remove jfes library (reason - memory leak in library)
 //const char *ver = "ver 2.7rc1";//02.07.2019 - major changes : unused gps serial port(USART2), used AT+CGNSINF command for getting gps data
-const char *ver = "ver 2.7rc2";//03.07.2019 - major changes : remove USART2 and GSM_STATUS_pin (PA2) from project
-
+//const char *ver = "ver 2.7rc2";//03.07.2019 - major changes : remove USART2 and GSM_STATUS_pin (PA2) from project
+//const char *ver = "ver 2.7rc3";//03.07.2019 - minor changes+++
+const char *ver = "ver 2.8rc1";//04.07.2019 - major changes : add JFES library (in #ifdef mode), fixed memory leak bug
 
 /*
 post-build steps command:
@@ -185,15 +186,15 @@ static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
-const uint8_t cmdsMax = 18;//19;//21;
+const uint8_t cmdsMax = 15;//18;//19;//21;
 const char *cmds[] = {
 	"AT\r\n",
 	"AT+CMEE=0\r\n",
 	"AT+GMR\r\n",//get version of FW
 	"AT+GSN\r\n",//get IMEI
-	"AT+CIMI\r\n",//get IMCI
-	"AT+CMGF=1\r\n",//test mode
-	"AT+CSCS=\"IRA\"\r\n",
+//	"AT+CIMI\r\n",//get IMCI
+//	"AT+CMGF=1\r\n",//test mode
+//	"AT+CSCS=\"IRA\"\r\n",
 	"AT+CGNSPWR=1\r\n",// power for GPS/GLONASS ON
 	"AT+CGNSPWR?\r\n",//check power for GPS/GLONASS status
 //	"AT+CCLK?\r\n",//get date/time
@@ -210,7 +211,7 @@ const char *cmds[] = {
 //	"AT+CENG?\r\n"
 };
 
-const char *sim_num = "9062100000";
+const char *sim_num = "+79062100000";
 const char *srv_adr_def = "aaa.bbb.ccc.ddd";
 const uint16_t srv_port_def = 9192;
 static char srv_adr[64] = {0};
@@ -234,6 +235,43 @@ const char *gpsINF = "AT+CGNSINF\r\n";
 
 static bool con_dis = 0;
 
+const uint8_t maxItems = 26;//30;
+const char *Items[] = {
+	"InfSeqNum",
+	"MsgType",
+	"DevID",
+	"DevName",
+	"SimNumber",
+	"DevTime",
+	"FreeMem",
+	"EpochTime",
+	"UTC",
+//	"Run",
+	"Status",
+	"Latitude",
+	"Longitude",
+	"Altitude",
+	"Speed",
+	"Dir",
+//	"Mode",
+	"HDOP",
+	"PDOP",
+	"VDOP",
+	"SatGPSV",
+	"SatGNSSU",
+	"SatGLONASSV",
+	"dBHz",
+//	"HPA",
+//	"VPA",
+	"Press",
+	"Temp",
+	"Lux",
+	"Humi"
+};
+#ifdef SET_JFES
+	jfes_config_t conf;
+	jfes_config_t *jconf = NULL;
+#endif
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -259,6 +297,9 @@ void ClearRxBuf();
 void initQ(s_msg_t *q);
 int8_t putQ(char *adr, s_msg_t *q);
 int8_t getQ(char *adr, s_msg_t *q);
+#ifdef SET_JFES
+//	void *getMem(size_t sz);
+#endif
 
 /* USER CODE END PFP */
 
@@ -341,6 +382,12 @@ int main(void)
 
     strcpy(srv_adr, srv_adr_def);
     srv_port = srv_port_def;
+
+#ifdef SET_JFES
+    conf.jfes_malloc = (jfes_malloc_t)malloc;//getMem,//pvPortMalloc,
+    conf.jfes_free = free;//vPortFree;
+    jconf = &conf;
+#endif
 
   /* USER CODE END 2 */
 
@@ -1077,6 +1124,7 @@ HAL_StatusTypeDef er = HAL_OK;
 size_t len = MAX_UART_BUF;
 
 	char *buff = (char *)pvPortMalloc(len);
+	//char *buff = (char *)calloc(1, len);
 	if (buff) {
 		int dl = 0, sz;
 		va_list args;
@@ -1108,6 +1156,7 @@ size_t len = MAX_UART_BUF;
 		va_end(args);
 
 		vPortFree(buff);
+		//free(buff);
 	} else er = HAL_ERROR;
 
 	if (er != HAL_OK) Leds(true, LED_ERROR);
@@ -1432,126 +1481,219 @@ int8_t parse_inf(char *in, s_inf_t *inf)
 	}
 	return 0;
 }
-//------------------------------------------------------------------------------------------
-int8_t makeInfString(const s_data_t *data, char *buf, const int max_len_buf)
+//-----------------------------------------------------------------------------------------
+#ifdef SET_JFES
+
+//void *getMem(size_t sz)
+//{
+//	return (calloc(1, sz));
+//}
+//-----------------------------------------------------------------------------------------
+int makeInfJsonString(const s_data_t *data, char *buf, int max_len_buf)
 {
-	if (!data || !buf) return 1;
+int ret = -1;
 
-	char tmp[64];
-	int len = 4;
-	strcpy(buf, "{\r\n");
+    if (!data || !buf || !max_len_buf) return ret;
 
-		len += sprintf(tmp, "\t\"InfSeqNum\": %lu,\r\n", ++infCounter);
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+    //jfes_config_t conf = {
+    //    .jfes_malloc = (jfes_malloc_t)malloc,//getMemory,//pvPortMalloc,
+	//	.jfes_free = free//vPortFree
+    //};
+    //jfes_config_t *jconf = &conf;
 
-		len += sprintf(tmp, "\t\"MsgType\": \"+CGNSINF\",\r\n");
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-		len += sprintf(tmp, "\t\"devID\": \"%s\",\r\n", devID);
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-		len += sprintf(tmp, "\t\"DevName\": \"%s\",\r\n", dev_name);
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-		len += sprintf(tmp, "\t\"SimNumber\": \"%s\",\r\n", sim_num);
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-		len += sprintf(tmp, "\t\"DevTime\": %lu,\r\n", get_secCounter());
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-		len += sprintf(tmp, "\t\"FreeMem\": %u,\r\n", xPortGetFreeHeapSize());
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        if (setDate) {
+    uint8_t i = 0;
+    jfes_value_t *obj = jfes_create_object_value(jconf);
+    if (obj) {
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ++infCounter), Items[i++], 0);//"InfSeqNum", 0);
+    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, "+CGNSINF", 0), Items[i++], 0);//"MsgType", 0);
+    	if (strlen(devID)) jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, devID, 0), Items[i++], 0);//"DevID", 0);
+    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, dev_name, 0), Items[i++], 0);//"DevName", 0);
+    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, sim_num, 0), Items[i++], 0);//"SimNumber", 0);
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, get_secCounter()), Items[i++], 0);//"DevTime", 0);
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, xPortGetFreeHeapSize()), Items[i++], 0);//"FreeMem", 0);
+    	if (setDate) {
 #ifdef SET_RTC_TMR
             uint32_t ep = getSecRTC(&hrtc);
 #else
             uint32_t ep = get_extDate();
 #endif
-            len += sprintf(tmp, "\t\"EpochTime\": %lu,\r\n", ep);
-            if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-        }
+            jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ep), Items[i++], 0);//"EpochTime", 0);
+        } else i++;
+        char stx[64];
+        int dl = sprintf(stx, "%02u.%02u.%04u %02u:%02u:%02u.%03u",
+        		data->inf.utc.day, data->inf.utc.mon, data->inf.utc.year,
+				data->inf.utc.hour, data->inf.utc.min, data->inf.utc.sec, data->inf.utc.ms);
+        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), Items[i++], 0);//"UTC", 0);
+//        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.run), Items[i++], 0);//"Run", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, nameValid[data->inf.status&1], 0), Items[i++], 0);//"Status", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.latitude), Items[i++], 0);//"Latitude", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.longitude), Items[i++], 0);//"Longitude", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.altitude), Items[i++], 0);//"Altitude", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.speed), Items[i++], 0);//"Speed", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.dir), Items[i++], 0);//"Dir", 0);
+//        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.mode), Items[i++], 0);//"Mode", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.HDOP), Items[i++], 0);//"HDOP", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.PDOP), Items[i++], 0);//"PDOP", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.VDOP), Items[i++], 0);//"VDOP", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.GPSsatV), Items[i++], 0);//"SatGPSV", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.GNSSsatU), Items[i++], 0);//"SatGNSSU", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.GLONASSsatV), Items[i++], 0);//"SatGLONASSV", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.dBHz), Items[i++], 0);//"dBHz", 0);
+//        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.HPA), Items[i++], 0);//"HPA", 0);
+//        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.VPA), Items[i++], 0);//"VPA", 0);
 
-        len += sprintf(tmp, "\t\"UTC\": \"%02u.%02u.%02u %02u:%02u:%02u.%03u\",\r\n",
-        				data->inf.utc.day, data->inf.utc.mon, data->inf.utc.year,
-						data->inf.utc.hour, data->inf.utc.min, data->inf.utc.sec, data->inf.utc.ms);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Run\": %u,\r\n", data->inf.run);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Status\": \"%s\",\r\n", nameValid[data->inf.status&1]);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Latitude\": %f,\r\n", data->inf.latitude);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Longitude\": %f,\r\n", data->inf.longitude);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Altitude\": %d,\r\n", data->inf.altitude);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Speed\": %.2f,\r\n", data->inf.speed);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Dir\": %.2f,\r\n", data->inf.dir);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-/*
-        len += sprintf(tmp, "\t\"Mode\": %u,\r\n", data->inf.mode);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-*/
-        len += sprintf(tmp, "\t\"HDOP\": %.2f,\r\n", data->inf.HDOP);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"PDOP\": %.2f,\r\n", data->inf.PDOP);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"VDOP\": %.2f,\r\n", data->inf.VDOP);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"SatGPSV\": %u,\r\n", data->inf.GPSsatV);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"SatGNSSU\": %u,\r\n", data->inf.GNSSsatU);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"SatGLONASSV\": %u,\r\n", data->inf.GLONASSsatV);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-/*
-        len += sprintf(tmp, "\t\"dBHz\": %u,\r\n", data->inf.dBHz);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"HPA\": %.2f,\r\n", data->inf.HPA);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"VPA\": %.2f,\r\n", data->inf.VPA);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-*/
-        len += sprintf(tmp, "\t\"Press\": %.2f,\r\n", data->sens.pres);
-                if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        len += sprintf(tmp, "\t\"Temp\": %.2f,\r\n", data->sens.temp);
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.pres), Items[i++], 0);//"Pres", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.temp), Items[i++], 0);//"Temp", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.lux), Items[i++], 0);//"Lux", 0);
 
         if (data->sens.chip == BME280_SENSOR) {
-        	len += sprintf(tmp, "\t\"Lux\": %.2f,\r\n", data->sens.lux);
-        } else {
-        	len += sprintf(tmp, "\t\"Lux\": %.2f\r\n", data->sens.lux);
-        }
-        if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
-
-        if (data->sens.chip == BME280_SENSOR) {
-        	len += sprintf(tmp, "\t\"Humi\": %.2f\r\n", data->sens.humi);
-        	if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else goto done;
+        	jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.humi), Items[i], 0);//"Humi", 0);
         }
 
-done:
+        jfes_size_t stx_size  = (jfes_size_t)max_len_buf;
+        jfes_value_to_string(obj, buf, &stx_size, 1);
+        *(buf + stx_size) = '\0';
+
+        jfes_free_value(jconf, obj);
+
+        ret = 0;
+    }
+
+    return ret;
+}
+#else
+//------------------------------------------------------------------------------------------
+int8_t makeInfString(const s_data_t *data, char *buf, int max_len_buf)
+{
+	if (!data || !buf || (max_len_buf < 4)) return 1;
+
+	char tmp[64];
+	int len = 4;
+
+	strcpy(buf, "{\r\n");
+
+	for (int i = 0; i < maxItems; i++) {
+		switch (i) {
+			case 0://"InfSeqNum",
+				len += sprintf(tmp, "\t\"%s\": %lu,\r\n", Items[i], ++infCounter);
+				break;
+			case 1://"MsgType",
+				len += sprintf(tmp, "\t\"%s\": \"+CGNSINF\",\r\n", Items[i]);
+				break;
+			case 2://"DevID",
+				len += sprintf(tmp, "\t\"%s\": \"%s\",\r\n", Items[i], devID);
+				break;
+			case 3://"DevName",
+				len += sprintf(tmp, "\t\"%s\": \"%s\",\r\n", Items[i], dev_name);
+				break;
+			case 4://"SimNumber",
+				len += sprintf(tmp, "\t\"%s\": \"%s\",\r\n", Items[i], sim_num);
+				break;
+			case 5://"DevTime",
+				len += sprintf(tmp, "\t\"%s\": %lu,\r\n", Items[i], get_secCounter());
+				break;
+			case 6://"FreeMem",
+				len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], xPortGetFreeHeapSize());
+				break;
+			case 7://"EpochTime",
+				if (setDate) {
+#ifdef SET_RTC_TMR
+					uint32_t ep = getSecRTC(&hrtc);
+#else
+					uint32_t ep = get_extDate();
+#endif
+					len += sprintf(tmp, "\t\"%s\": %lu,\r\n", Items[i], ep);
+				} else memset(tmp, 0, sizeof(tmp));
+				break;
+			case 8://"UTC",
+				len += sprintf(tmp, "\t\"%s\": \"%02u.%02u.%02u %02u:%02u:%02u.%03u\",\r\n", Items[i],
+        						data->inf.utc.day, data->inf.utc.mon, data->inf.utc.year,
+								data->inf.utc.hour, data->inf.utc.min, data->inf.utc.sec, data->inf.utc.ms);
+				break;
+/*
+			case 9://"Run",
+        		len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], data->inf.run);
+        		break;
+*/
+			case 9://"Status",
+				len += sprintf(tmp, "\t\"%s\": \"%s\",\r\n", Items[i], nameValid[data->inf.status&1]);
+				break;
+			case 10://"Latitude",
+				len += sprintf(tmp, "\t\"%s\": %f,\r\n", Items[i], data->inf.latitude);
+				break;
+			case 11://"Longitude",
+				len += sprintf(tmp, "\t\"%s\": %f,\r\n", Items[i], data->inf.longitude);
+				break;
+			case 12://"Altitude",
+				len += sprintf(tmp, "\t\"%s\": %d,\r\n", Items[i], data->inf.altitude);
+				break;
+			case 13://"Speed",
+				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.speed);
+				break;
+			case 14://"Dir",
+				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.dir);
+				break;
+/*
+			case 15://"Mode",
+        		len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], data->inf.mode);
+        		break;
+*/
+			case 15://"HDOP",
+				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.HDOP);
+				break;
+			case 16://"PDOP",
+				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.PDOP);
+				break;
+			case 17://"VDOP",
+				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.VDOP);
+				break;
+			case 18://"SatGPSV",
+				len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], data->inf.GPSsatV);
+				break;
+			case 19://"SatGNSSU",
+				len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], data->inf.GNSSsatU);
+				break;
+			case 20://"SatGLONASSV",
+				len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], data->inf.GLONASSsatV);
+				break;
+			case 21://"dBHz",
+				len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], data->inf.dBHz);
+				break;
+/*
+			case 22://"HPA",
+        		len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.HPA);
+				break;
+			case 23://"VPA",
+        		len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.VPA);
+        		break;
+*/
+			case 22://"Press",
+				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->sens.pres);
+				break;
+			case 23://"Temp",
+				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->sens.temp);
+				break;
+			case 24://"Lux",
+				if (data->sens.chip == BME280_SENSOR) {
+					len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->sens.lux);
+				} else {
+					len += sprintf(tmp, "\t\"%s\": %.2f\r\n", Items[i], data->sens.lux);
+				}
+				break;
+			case 25://"Humi"
+				if (data->sens.chip == BME280_SENSOR) {
+					len += sprintf(tmp, "\t\"%s\": %.2f\r\n", Items[i], data->sens.humi);
+				} else memset(tmp, 0, sizeof(tmp));
+				break;
+		}//switch (i)
+		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else break;
+	}//for
 
 	strcat(buf, "}");
 
 	return 0;
 }
+#endif
 //-----------------------------------------------------------------------------------------
 void toDisplay(const char *st, uint8_t column, uint8_t line, bool clear)
 {
@@ -1795,12 +1937,10 @@ void StartAtTask(void *argument)
 
 	AtParamInit();
 
-	HAL_Delay(500);
+	HAL_Delay(1000);
 
-	uint32_t tmps = 1250;
-	gsmONOFF(tmps);
-
-	HAL_Delay(500);
+	//uint32_t tmps = 1850;
+	//gsmONOFF(tmps);
 
 	char *uki = msgCMD;
 	const char *buff = NULL;
@@ -1821,6 +1961,7 @@ void StartAtTask(void *argument)
 	char cmd[80];
 	int dl;
 
+
 	char toScr[SCREEN_SIZE];
 
 	tms = min_ms;
@@ -1832,10 +1973,12 @@ void StartAtTask(void *argument)
 	toDisplay((const char *)toScr, 0, 2, false);
 #endif
 
+	uint32_t tmps = 1250;
+	gsmONOFF(tmps);
 
 	uint8_t rx_faza = 0;
 	uint8_t faza = 4;
-	wait_ack = get_tmr(3);
+	wait_ack = get_tmr(2);
 	//uint8_t last_faza = faza;
 
 	ackYes = 0;
@@ -1942,8 +2085,12 @@ void StartAtTask(void *argument)
 						}
 					}
 				}
-				if (osMessageQueueGet(mqData, (void *)&aData, NULL, 20) == osOK) {
+				if (osMessageQueueGet(mqData, (void *)&aData, NULL, 10) == osOK) {
+#ifdef SET_JFES
+					if (!makeInfJsonString(&aData, msgGPRS, (sizeof(msgGPRS) - 3))) {
+#else
 					if (!makeInfString(&aData, msgGPRS, sizeof(msgGPRS) - 3)) {
+#endif
 						strcat(msgGPRS, "\r\n");
 						dl = strlen(msgGPRS);
 						if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {

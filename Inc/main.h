@@ -32,6 +32,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
@@ -40,16 +41,16 @@ extern "C" {
 #include <time.h>
 #include <math.h>
 #include <stdarg.h>
+#include "def.h"
 
+#ifdef SET_JFES
+	#include "jfes.h"
+#endif
 //#include "stm32f4xx_hal_rtc.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
-
-//#define SET_RTC_TMR
-//#define SET_OLED_I2C
-#define SET_OLED_SPI
 
 #define MAX_QMSG 8//16
 
@@ -194,8 +195,11 @@ SPI_HandleTypeDef *portSPI;
 
 #define wait_sensor_def 32
 #define wait_gps_def wait_sensor_def - 2 //>> 1
-#define MAX_UART_BUF 640//512//480//400//384//256
-
+#ifdef SET_JFES
+	#define MAX_UART_BUF 704//640//512//480//400//384//256
+#else
+	#define MAX_UART_BUF 640//512//480//400//384//256
+#endif
 
 /* USER CODE END EM */
 

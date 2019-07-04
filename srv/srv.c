@@ -35,7 +35,7 @@
 #define LEN1K 1024
 #define buf_size (LEN1K << 1)
 #define TIME_STR_LEN LEN64
-#define tmr_wait_def 60
+#define tmr_wait_def 90
 #define tcp_port_def 9192
 
 //--------------------------------------------------------------------
@@ -45,6 +45,8 @@ unsigned int tmr_wait = tmr_wait_def;
 pid_t pid_main;
 FILE *pid_fp = NULL;
 const char *pid_name = "srv.pid";
+const char *the_log = "logs.txt";
+int fd_log = -1;
 
 const unsigned int sizeofint = sizeof(unsigned int);
 
@@ -84,9 +86,12 @@ int i_hour, i_min, i_sec, i_day, i_mes, mil;
 //-----------------------------------------------------------------------
 void print_cdr(const char *st, unsigned char dt)
 {
-    if (dt) printf("%s", TimeNowPrn(dt_str));
-
-    printf("%s", st);
+    if (dt) printf("%s",TimeNowPrn(dt_str));
+    printf("%s",st);
+    if (fd_log) {
+        if (dt) write(fd_log, TimeNowPrn(dt_str), strlen(dt_str));
+        write(fd_log, st, strlen(st));
+    }
 }
 //-----------------------------------------------------------------------
 static unsigned int get_timer_sec(unsigned int t)
@@ -315,6 +320,7 @@ char stril[LEN64] = {0};
 char chap[LEN256] = {0};
 //char server_port[LEN64] = {0};
 int connsocket = -1, client = -1, resa, Vixod = 0, on = 1;
+unsigned char errs = 0;
 
 /*
     if (argc < 2) {
@@ -322,6 +328,13 @@ int connsocket = -1, client = -1, resa, Vixod = 0, on = 1;
         return 1;
     }
 */
+
+    fd_log = open(the_log, O_WRONLY | O_APPEND | O_CREAT, 0664);
+    if (fd_log < 0) {
+        sprintf(chap, "%s Can't open %s file (%d)\n", TimeNowPrn(dt_str), the_log, fd_log);
+        printf("%s", chap);
+        return 1;
+    }
 
     pid_main = getpid();
     pid_fp = fopen(pid_name, "w");
@@ -392,12 +405,14 @@ int connsocket = -1, client = -1, resa, Vixod = 0, on = 1;
         if (bind(connsocket, (struct sockaddr *) &srv_conn, srvlen) == -1) {
             sprintf(chap,"ERROR: Bind [port %d].\n", tcp_port);
             print_cdr(chap, 1);
+            errs = 1;
             goto out_of_job;
         }
 
         if (listen(connsocket, 3) == -1) {
             sprintf(chap,"ERROR: Listen [port %d].\n", tcp_port);
             print_cdr(chap, 1);
+            errs = 1;
             goto out_of_job;
         }
 
@@ -458,10 +473,15 @@ out_of_job:
             close(connsocket);
         }
 
+        if (errs) break;
+
+
     }//while(1<2)
 
 
     if (pid_main) unlink(pid_name);
+
+    if (fd_log > 0) close(fd_log);
 
     return 0;
 }
