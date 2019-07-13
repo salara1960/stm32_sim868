@@ -126,7 +126,7 @@ typedef struct {
 } s_utc_t;
 #pragma pack(pop)
 
-//+CGNSINF: 1,0,19800106002148.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
+//+CGNSINF: 1,1,20190713185113.000,54.727896,20.536470,78.711,0.35,112.6,1,,2.2,2.4,1.0,,14,5,,,29,,
 #pragma pack(push,1)
 typedef struct {
 	uint8_t run;		//1
@@ -268,8 +268,8 @@ void Leds(bool act, uint16_t Pin);
 
 
 #ifdef SET_OLED_SPI
-#define CS_OLED_SELECT() HAL_GPIO_WritePin(OLED_CS_GPIO_Port, OLED_CS_Pin, GPIO_PIN_RESET)
-#define CS_OLED_DESELECT() HAL_GPIO_WritePin(OLED_CS_GPIO_Port, OLED_CS_Pin, GPIO_PIN_SET)
+	#define CS_OLED_SELECT() HAL_GPIO_WritePin(OLED_CS_GPIO_Port, OLED_CS_Pin, GPIO_PIN_RESET)
+	#define CS_OLED_DESELECT() HAL_GPIO_WritePin(OLED_CS_GPIO_Port, OLED_CS_Pin, GPIO_PIN_SET)
 #endif
 
 

@@ -78,7 +78,9 @@
 //const char *ver = "ver 2.7rc1";//02.07.2019 - major changes : unused gps serial port(USART2), used AT+CGNSINF command for getting gps data
 //const char *ver = "ver 2.7rc2";//03.07.2019 - major changes : remove USART2 and GSM_STATUS_pin (PA2) from project
 //const char *ver = "ver 2.7rc3";//03.07.2019 - minor changes+++
-const char *ver = "ver 2.8rc1";//04.07.2019 - major changes : add JFES library (in #ifdef mode), fixed memory leak bug
+//const char *ver = "ver 2.8rc1";//04.07.2019 - major changes : add JFES library (in #ifdef mode), fixed memory leak bug
+//const char *ver = "ver 2.8rc2";//05.07.2019 - minor changes++++
+const char *ver = "ver 2.8rc3";//13.07.2019 - minor changes+++++
 
 /*
 post-build steps command:
@@ -212,7 +214,7 @@ const char *cmds[] = {
 };
 
 const char *sim_num = "+79062100000";
-const char *srv_adr_def = "aaa.bbb.ccc.ddd";
+const char *srv_adr_def = "127.0.0.1";
 const uint16_t srv_port_def = 9192;
 static char srv_adr[64] = {0};
 static uint16_t srv_port;
@@ -725,7 +727,7 @@ static void MX_UART4_Init(void)
 {
 
   /* USER CODE BEGIN UART4_Init 0 */
-
+//			AT port
   /* USER CODE END UART4_Init 0 */
 
   /* USER CODE BEGIN UART4_Init 1 */
@@ -769,7 +771,7 @@ static void MX_USART3_UART_Init(void)
 
   /* USER CODE END USART3_Init 1 */
   huart3.Instance = USART3;
-  huart3.Init.BaudRate = 500000;
+  huart3.Init.BaudRate = 115200;//500000;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
   huart3.Init.Parity = UART_PARITY_NONE;
@@ -905,6 +907,7 @@ void gsmONOFF(uint32_t twait)
 	HAL_Delay(twait);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
 	Report(true, "GSM_KEY set to 1\r\n");
+	ackYes = 0;
 }
 //-----------------------------------------------------------------------------
 void ClearRxBuf()
@@ -1231,16 +1234,14 @@ void getAT()
 				int len = strlen(AtRxBuf);
 				char *buff = (char *)calloc(1, len + 1);
 				if (buff) {
+					int8_t sta;
 					memcpy(buff, AtRxBuf, len);
-					if (putQ(buff, &q_at) < 0) free(buff);
 					if (strstr(AtRxBuf, "+CGNSINF:")) {
-						char *buff2 = (char *)calloc(1, len + 1);
-						if (buff2) {
-							memcpy(buff2, AtRxBuf, len);
-							if (putQ(buff2, &q_gps) < 0) free(buff2);
-							//else HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);//add to q_gps OK
-						}
+						sta = putQ(buff, &q_gps);
+					} else {
+						sta = putQ(buff, &q_at);
 					}
+					if (sta < 0) free(buff);
 				}
 			}
 			at_rx_uk = adone = 0;
@@ -1774,18 +1775,18 @@ void StartDefTask(void *argument)
   				switch (levt.chip) {
   					case BMP280_SENSOR :
   						sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", levt.pres, levt.temp);
-  						if (show) sprintf(DefBuf, "BMP280: Press=%.2f mmHg, Temp=%.2f DegC; BH1750: Lux=%.2f lx\r\n",
+  						if (show) sprintf(DefBuf, "BMP280: mmHg=%.2f, DegC=%.2f; BH1750: Lx=%.2f\r\n",
   										levt.pres, levt.temp, levt.lux);
   				  	break;
   					case BME280_SENSOR :
   						row = 5;
   						sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f\nHumi: %.2f %%rH", levt.pres, levt.temp, levt.humi);
-  				  		if (show) sprintf(DefBuf, "BME280: Press=%.2f mmHg, Temp=%.2f DegC Humidity=%.2f %%rH; BH1750: Lux=%.2f lx\r\n",
+  				  		if (show) sprintf(DefBuf, "BME280: mmHg=%.2f, DegC=%.2f %%rH=%.2f; BH1750: Lx=%.2f\r\n",
   				  						levt.pres, levt.temp, levt.humi, levt.lux);
   				  	break;
   					default : {
   						sprintf(toScreen, "\n\n");
-  						if (show) sprintf(DefBuf, "Unknown chip; BH1750: Lux=%.2f lx\r\n", levt.lux);
+  						if (show) sprintf(DefBuf, "Unknown chip; BH1750: Lx=%.2f\r\n", levt.lux);
   					}
   				}
   				//
@@ -1807,7 +1808,7 @@ void StartDefTask(void *argument)
   			flags.restart = 0;
   			if (gprs_stat.connect) flags.disconnect = 1;
   			Report(true, "Restart all !\r\n");
-  			osDelay(1000);
+  			osDelay(500);
   			NVIC_SystemReset();
   			break;
   		}
@@ -1818,6 +1819,8 @@ void StartDefTask(void *argument)
   			sprintf(toScreen, "Stop All");
   			Report(true, "%s!\r\n", toScreen);
   			toDisplay((const char *)toScreen, 0, 5, false);
+  			osDelay(1500);
+  			gsmONOFF(1850);
   			LoopAll = false;
   			break;
   		}
@@ -1939,14 +1942,11 @@ void StartAtTask(void *argument)
 
 	HAL_Delay(1000);
 
-	//uint32_t tmps = 1850;
-	//gsmONOFF(tmps);
-
 	char *uki = msgCMD;
 	const char *buff = NULL;
 	uint8_t counter = 0;
 	uint32_t wait_ack = 0;
-	uint64_t new_cmds = 0, min_ms = 1, max_ms = 10, tms;
+	uint64_t new_cmds = 0, min_ms = 1, max_ms = 6, tms;
 	flags.imei_flag = flags.inf = 0;
 	char *uk = NULL;
 	uint8_t cnt = 0, max_repeat = 8;
@@ -1980,14 +1980,11 @@ void StartAtTask(void *argument)
 	uint8_t faza = 4;
 	wait_ack = get_tmr(2);
 	//uint8_t last_faza = faza;
-
-	ackYes = 0;
-
-	//counter = 0;
-	//cmdsInd = 0;
-	//cmdsDone = true;
-	//new_cmds = 0;
-	//flags.auto_cmd = 1;
+	counter = 0;
+	cmdsInd = 0;
+	cmdsDone = true;
+	new_cmds = 0;
+	flags.auto_cmd = 1;
 
 	/* Infinite loop */
 	while (LoopAll) {
@@ -2048,13 +2045,13 @@ void StartAtTask(void *argument)
 					if (check_tmr(wait_ack)) {
 						wait_ack = 0;
 						cmdsDone = true;
-						if (ackYes) {
+						//if (ackYes) {
 							if (cmdsInd >= 0) {
 								cmdsInd++;
 								if (cmdsInd >= cmdsMax) cmdsInd = -1;
 												   else new_cmds = get_hstmr(min_ms);//250 ms
 							} else evt_gsm = 2;//OFF
-						} else evt_gsm = 1;//ON
+						//} else evt_gsm = 1;//ON
 					}
 				}
 				if (evt_gsm || flags.auto_cmd) faza = 0;
@@ -2135,7 +2132,7 @@ void StartAtTask(void *argument)
 				if (check_tmr(wait_ack)) {
 					wait_ack = 0;
 					faza = 0;
-					evt_gsm = 1;//ON
+					if (!ackYes) evt_gsm = 1;//ON
 				}
 			break;
 
@@ -2204,8 +2201,7 @@ void StartAtTask(void *argument)
 							toDisplay((const char *)toScr, 1, 5, true);
 #endif
 						}
-					}
-					else if ((uki = strstr(msgAT, "+CGNSPWR: ")) != NULL) {
+					} else if ((uki = strstr(msgAT, "+CGNSPWR: ")) != NULL) {
 						if (*(uki + 10) == '1') onGNS = true;
 										   else onGNS = false;
 					} else if ((uki = strstr(msgAT, "+CGATT: ")) != NULL) {
@@ -2216,13 +2212,22 @@ void StartAtTask(void *argument)
 						if (strstr(msgAT, "SEND OK")) {
 							gprs_stat.send_ok = 1;
 							gprs_stat.next_send = 1;
-						} else if ((strstr(msgAT, "CLOSE") || strstr(msgAT, "ERROR")) && gprs_stat.connect) {
-							gprs_stat.connect = 0;
-							con_dis = false;
-							gprs_stat.send_ok = gprs_stat.next_send = 1;
-							Report(true, "--- DISCONNECTED ---\r\n");
-							if (gprs_stat.try_disconnect) gprs_stat.try_disconnect = 0;
-							HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
+						} else if (gprs_stat.connect) {
+							if (strstr(msgAT, "CLOSE")) {
+								gprs_stat.connect = 0;
+								con_dis = false;
+								gprs_stat.send_ok = gprs_stat.next_send = 1;
+								Report(true, "--- DISCONNECTED ---\r\n");
+								if (gprs_stat.try_disconnect) gprs_stat.try_disconnect = 0;
+								HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
+							} else if (strstr(msgAT, "ERROR")) {
+								//gprs_stat.connect = 0;
+								//con_dis = false;
+								//gprs_stat.send_ok = gprs_stat.next_send = 1;
+								//Report(true, "--- TRY DISCONNECT ---\r\n");
+								gprs_stat.try_disconnect = 1;
+								//HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
+							}
 						}
 						if (strchr(msgAT, '>')) gprs_stat.prompt = 1; else gprs_stat.prompt = 0;
 						if (gprs_stat.try_connect) {
@@ -2236,6 +2241,7 @@ void StartAtTask(void *argument)
 								HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);
 							}
 						}
+
 
 						wait_ack = 0;
 						cmdsDone = true;
@@ -2251,6 +2257,16 @@ void StartAtTask(void *argument)
 							new_cmds = get_hstmr(tms);
 						}
 					}//"ERROR" || "OK" || "CLOSE" || '>' || "+BTSCAN: 1" -> next cmd enable (cmdsDone = true; wait_ack = 0;)
+					//
+					if (strstr(msgAT, "ALREADY CONNECT")) {
+						gprs_stat.connect = 1;
+						gprs_stat.send_ok = 1;
+						gprs_stat.try_connect = 0;
+						flags.msg_begin = 1;
+						con_dis = true;
+						HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);
+					}
+					//
 				}
 
 				Report(false, msgAT);
@@ -2271,12 +2287,12 @@ void StartAtTask(void *argument)
 			if (evt_gsm == 2) tmps = 1850;//module OFF
 						 else tmps = 1250;//module ON
 			evt_gsm = 0;
-			AtParamInit();
-			gsmONOFF(tmps);
-			gprs_stat.init = gprs_stat.connect = 0;
-			flags.imei_flag = flags.auto_cmd = flags.inf = 0;
-			ackYes = 0;
-			HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
+			if (!ackYes) {
+				AtParamInit();
+				gsmONOFF(tmps);
+				gprs_stat.init = gprs_stat.connect = 0;
+				flags.imei_flag = flags.auto_cmd = flags.inf = 0;
+			}
 		}
 
 		if (flags.srv) {
