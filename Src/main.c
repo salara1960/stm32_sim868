@@ -80,7 +80,8 @@
 //const char *ver = "ver 2.7rc3";//03.07.2019 - minor changes+++
 //const char *ver = "ver 2.8rc1";//04.07.2019 - major changes : add JFES library (in #ifdef mode), fixed memory leak bug
 //const char *ver = "ver 2.8rc2";//05.07.2019 - minor changes++++
-const char *ver = "ver 2.8rc3";//13.07.2019 - minor changes+++++
+//const char *ver = "ver 2.8rc3";//13.07.2019 - minor changes+++++
+const char *ver = "ver 2.9rc1";//15.07.2019 - major changes : add VIO -> GSM_STATUS pin (PA2) - pin42 module sim868
 
 /*
 post-build steps command:
@@ -771,7 +772,7 @@ static void MX_USART3_UART_Init(void)
 
   /* USER CODE END USART3_Init 1 */
   huart3.Instance = USART3;
-  huart3.Init.BaudRate = 115200;//500000;
+  huart3.Init.BaudRate = 115200;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
   huart3.Init.Parity = UART_PARITY_NONE;
@@ -843,6 +844,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(USER_IN_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : GSM_STATUS_Pin */
+  GPIO_InitStruct.Pin = GSM_STATUS_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GSM_STATUS_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : GSM_KEY_Pin */
   GPIO_InitStruct.Pin = GSM_KEY_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -875,6 +882,11 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+//------------------------------------------------------------------------------------------
+bool getVIO()
+{
+	return ((bool)HAL_GPIO_ReadPin(GSM_STATUS_GPIO_Port, GSM_STATUS_Pin));
+}
 //-----------------------------------------------------------------------------------------
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 uint8_t ssd1306_calcx(int len)
@@ -902,11 +914,13 @@ uint8_t a, b, c, i;
 void gsmONOFF(uint32_t twait)
 {
 	flags.gps_log_show = flags.i2c_log_show = flags.combo_log_show = 0;
-	Report(true, "GSM_KEY set to 0\r\n");
+	//Report(true, "GSM_KEY set to 0\r\n");
+	Report(true, "GSM_KEY set to 0 (vio=%u)\r\n", getVIO());
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);//set 0
 	HAL_Delay(twait);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
-	Report(true, "GSM_KEY set to 1\r\n");
+	//Report(true, "GSM_KEY set to 1\r\n");
+	Report(true, "GSM_KEY set to 1 (vio=%u)\r\n", getVIO());
 	ackYes = 0;
 }
 //-----------------------------------------------------------------------------
@@ -1289,6 +1303,8 @@ void LogData()
 				} else if (strstr(RxBuf, "DIS:")) {
 					flags.disconnect = 1; priz = true;
 					con_dis = false;
+				} else if (strstr(RxBuf, "VIO:")) {
+					flags.vio = 1; priz = true;
 				} else if (strstr(RxBuf, "ON:")) {
 					evt_gsm = 1; priz = true;
 				} else if (strstr(RxBuf, "OFF:")) {
@@ -1808,7 +1824,7 @@ void StartDefTask(void *argument)
   			flags.restart = 0;
   			if (gprs_stat.connect) flags.disconnect = 1;
   			Report(true, "Restart all !\r\n");
-  			osDelay(500);
+  			osDelay(1000);
   			NVIC_SystemReset();
   			break;
   		}
@@ -1821,13 +1837,20 @@ void StartDefTask(void *argument)
   			toDisplay((const char *)toScreen, 0, 5, false);
   			osDelay(1500);
   			gsmONOFF(1850);
+  			uint8_t ct = 6;
+  			while (getVIO()) {
+  				gsmONOFF(1850);
+  				osDelay(1000);
+  				ct--;
+  				if (!ct) break;
+  			}
   			LoopAll = false;
   			break;
   		}
 
   		//-------------------------------------------------------------------------
   		if (new == 3) {
-  			HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//On led
+//  			HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//On led
   			new = 0;
   			osMessageQueuePut(mqData, (void *)&iData, 0, 20);
   		}
@@ -1973,21 +1996,50 @@ void StartAtTask(void *argument)
 	toDisplay((const char *)toScr, 0, 2, false);
 #endif
 
-	uint32_t tmps = 1250;
-	gsmONOFF(tmps);
-
 	uint8_t rx_faza = 0;
-	uint8_t faza = 4;
+	uint8_t faza = 0;
+	//uint32_t tmps = 1250;
+	if (!getVIO()) {
+		gsmONOFF(1250);
+		//evt_gsm = 1;
+	} else {
+		//wait_ack = get_tmr(2);
+		flags.auto_cmd = 1;
+		faza = 4;
+		counter = 0;
+		cmdsInd = 0;
+		cmdsDone = true;
+		new_cmds = 0;
+	}
 	wait_ack = get_tmr(2);
-	//uint8_t last_faza = faza;
-	counter = 0;
-	cmdsInd = 0;
-	cmdsDone = true;
-	new_cmds = 0;
-	flags.auto_cmd = 1;
 
 	/* Infinite loop */
 	while (LoopAll) {
+
+		//-----------------------------------------------------------
+		if (evt_gsm) {
+			uint8_t ctn = 4;
+			if (evt_gsm == 2) {
+				while (getVIO()) {
+					gsmONOFF(1850);//module OFF
+					osDelay(1500);
+					ctn--; if (!ctn) break;
+				};
+				faza = 0;
+			} else {
+				while (!getVIO()) {
+					gsmONOFF(1250);//module ON
+					osDelay(1500);
+					ctn--; if (ctn) break;
+				};
+			}
+			AtParamInit();
+			gprs_stat.init = gprs_stat.connect = 0;
+			flags.imei_flag = flags.auto_cmd = flags.inf = 0;
+			//Report(true, "evt_gsm=%u vio=%u\r\n", evt_gsm, getVIO());
+			evt_gsm = 0;
+		}
+		//-----------------------------------------------------------
 
 		switch (faza) {
 			case 0:
@@ -2045,13 +2097,13 @@ void StartAtTask(void *argument)
 					if (check_tmr(wait_ack)) {
 						wait_ack = 0;
 						cmdsDone = true;
-						//if (ackYes) {
+						if (getVIO()) {
 							if (cmdsInd >= 0) {
 								cmdsInd++;
 								if (cmdsInd >= cmdsMax) cmdsInd = -1;
 												   else new_cmds = get_hstmr(min_ms);//250 ms
 							} else evt_gsm = 2;//OFF
-						//} else evt_gsm = 1;//ON
+						} else evt_gsm = 1;//ON
 					}
 				}
 				if (evt_gsm || flags.auto_cmd) faza = 0;
@@ -2102,7 +2154,7 @@ void StartAtTask(void *argument)
 							}
 						}
 					}
-					HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//Off led
+//					HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//Off led
 				}
 				if (gprs_stat.prompt && gprs_stat.connect) {
 					yes = true;
@@ -2113,7 +2165,7 @@ void StartAtTask(void *argument)
 					if (flags.inf) {
 						if (cmdsDone) {
 							flags.inf = 0;
-							if (onGNS) {
+							if (getVIO() && (onGNS)) {
 								yes = true;
 								buff = gpsINF;//AT+CGNSINF
 								rmc5 = 0;
@@ -2132,7 +2184,7 @@ void StartAtTask(void *argument)
 				if (check_tmr(wait_ack)) {
 					wait_ack = 0;
 					faza = 0;
-					if (!ackYes) evt_gsm = 1;//ON
+					if (!getVIO()) evt_gsm = 1;//ON
 				}
 			break;
 
@@ -2282,19 +2334,19 @@ void StartAtTask(void *argument)
 		}
 
 		//---------------------------------------------------------------------------
-
+/*
 		if (evt_gsm) {
 			if (evt_gsm == 2) tmps = 1850;//module OFF
 						 else tmps = 1250;//module ON
 			evt_gsm = 0;
-			if (!ackYes) {
+			if (!getVIO()) {
 				AtParamInit();
 				gsmONOFF(tmps);
 				gprs_stat.init = gprs_stat.connect = 0;
 				flags.imei_flag = flags.auto_cmd = flags.inf = 0;
 			}
 		}
-
+*/
 		if (flags.srv) {
 			flags.srv = 0;
 			Report(true, "NEW SERVER : %s:%u\r\n", srv_adr, srv_port);
@@ -2302,6 +2354,11 @@ void StartAtTask(void *argument)
 			sprintf(toScr, "%s", srv_adr);
 			toDisplay((const char *)toScr, 0, 2, true);
 #endif
+		}
+
+		if (flags.vio) {
+			flags.vio = 0;
+			Report(true, "GSM VIO is %u\r\n", getVIO());
 		}
 
 		osDelay(2);
@@ -2371,6 +2428,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 				  con_dis = false;
 			  }
 		  }
+		  //------------------------------------------------------------------------------------------
+		  if (getVIO()) HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//gsm is on
+		  		   else HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//gsm is off
 		  //------------------------------------------------------------------------------------------
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 		  char pic = 0x14;

@@ -110,7 +110,8 @@ typedef struct {
 	unsigned msg_end:1;
 	unsigned auto_cmd:1;
 	unsigned inf:1;
-	unsigned unused:2;
+	unsigned vio:1;
+	unsigned unused:1;
 } s_flags;
 #pragma pack(pop)
 
@@ -126,7 +127,7 @@ typedef struct {
 } s_utc_t;
 #pragma pack(pop)
 
-//+CGNSINF: 1,1,20190713185113.000,54.727896,20.536470,78.711,0.35,112.6,1,,2.2,2.4,1.0,,14,5,,,29,,
+//+CGNSINF: 1,0,19800106002148.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
 #pragma pack(push,1)
 typedef struct {
 	uint8_t run;		//1
@@ -217,6 +218,8 @@ void Leds(bool act, uint16_t Pin);
 /* Private defines -----------------------------------------------------------*/
 #define USER_IN_Pin GPIO_PIN_0
 #define USER_IN_GPIO_Port GPIOA
+#define GSM_STATUS_Pin GPIO_PIN_2
+#define GSM_STATUS_GPIO_Port GPIOA
 #define GSM_KEY_Pin GPIO_PIN_3
 #define GSM_KEY_GPIO_Port GPIOA
 #define TX3_Pin GPIO_PIN_10
