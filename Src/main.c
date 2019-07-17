@@ -81,7 +81,10 @@
 //const char *ver = "ver 2.8rc1";//04.07.2019 - major changes : add JFES library (in #ifdef mode), fixed memory leak bug
 //const char *ver = "ver 2.8rc2";//05.07.2019 - minor changes++++
 //const char *ver = "ver 2.8rc3";//13.07.2019 - minor changes+++++
-const char *ver = "ver 2.9rc1";//15.07.2019 - major changes : add VIO -> GSM_STATUS pin (PA2) - pin42 module sim868
+//const char *ver = "ver 2.9rc1";//15.07.2019 - major changes : add VIO -> GSM_STATUS pin (PA2) - pin42 module sim868
+//const char *ver = "ver 3.0rc1";//16.07.2019 - major changes : add sms support - step 1 ('+CMT:' mode)
+const char *ver = "ver 3.0rc2";//17.07.2019 - minor changes : '+CMT:' continue - support Data coding: GSM7bit
+
 
 /*
 post-build steps command:
@@ -189,14 +192,18 @@ static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
-const uint8_t cmdsMax = 15;//18;//19;//21;
+const uint8_t cmdsMax = 18;//19;//21;
 const char *cmds[] = {
 	"AT\r\n",
 	"AT+CMEE=0\r\n",
 	"AT+GMR\r\n",//get version of FW
 	"AT+GSN\r\n",//get IMEI
+	"AT+CNMI=1,2,0,1,0\r\n",
+	"AT+SCLASS0=0\r\n",
+//	"AT+CPMS=\"SM\",\"SM\",\"SM\"\r\n",
+	"AT+CMGF=0\r\n",//;+CLIP=1\r\n",
 //	"AT+CIMI\r\n",//get IMCI
-//	"AT+CMGF=1\r\n",//test mode
+//	"AT+CMGF=1\r\n",//text mode
 //	"AT+CSCS=\"IRA\"\r\n",
 	"AT+CGNSPWR=1\r\n",// power for GPS/GLONASS ON
 	"AT+CGNSPWR?\r\n",//check power for GPS/GLONASS status
@@ -275,6 +282,52 @@ const char *Items[] = {
 	jfes_config_t conf;
 	jfes_config_t *jconf = NULL;
 #endif
+
+
+#ifdef SET_SMS
+
+	const char *tp[4] =
+	{
+		"GSM-7bit",
+		"GSM-8bit",
+		"UCS2",
+		"???"
+	};
+	const char *type_name_a[9] =
+	{
+		"unknown",
+		"International",
+		"National",
+		"Network",
+		"Subscriber",
+		"Alphanumeric",
+		"Abbreviated",
+		"reserved",
+		"???"
+	};
+
+	char alphabet[] ="@ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 !\"#$%&'()*+,-./:;<=>?АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя\n\r`эijIЭ";
+	uint16_t cod_PDU[cod_PDU_len] =
+	{
+	    0x0040,0x0041,0x0042,0x0043,0x0044,0x0045,0x0046,0x0047,0x0048,0x0049,0x004A,0x004B,0x004C,0x004D,0x004E,0x004F,
+	    0x0050,0x0051,0x0052,0x0053,0x0054,0x0055,0x0056,0x0057,0x0058,0x0059,0x005A,0x0061,0x0062,0x0063,0x0064,0x0065,
+	    0x0066,0x0067,0x0068,0x0069,0x006A,0x006B,0x006C,0x006D,0x006E,0x006F,0x0070,0x0071,0x0072,0x0073,0x0074,0x0075,
+	    0x0076,0x0077,0x0078,0x0079,0x007A,0x0030,0x0031,0x0032,0x0033,0x0034,0x0035,0x0036,0x0037,0x0038,0x0039,0x0020,
+	    0x0021,0x0022,0x0023,0x0024,0x0025,0x0026,0x0027,0x0028,0x0029,0x002A,0x002B,0x002C,0x002D,0x002E,0x002F,0x003A,
+	    0x003B,0x003C,0x003D,0x003E,0x003F,0x0410,0x0411,0x0412,0x0413,0x0414,0x0415,0x0401,0x0416,0x0417,0x0418,0x0419,
+	    0x041A,0x041B,0x041C,0x041D,0x041E,0x041F,0x0420,0x0421,0x0422,0x0423,0x0424,0x0425,0x0426,0x0427,0x0428,0x0429,
+	    0x042A,0x042B,0x042C,0x042D,0x042E,0x042F,0x0430,0x0431,0x0432,0x0433,0x0434,0x0435,0x00B8,0x0436,0x0437,0x0438,
+	    0x0439,0x043A,0x043B,0x043C,0x043D,0x043E,0x043F,0x0440,0x0441,0x0442,0x0443,0x0444,0x0445,0x0446,0x0447,0x0448,
+	    0x0449,0x044A,0x044B,0x044C,0x044D,0x044E,0x044F,0x000A,0x000D,0x0060,0x0454,0x0456,0x0457,0x0406,0x0404
+	};
+	const char *eolin = "\r\n";
+	int TSINPART = 0;
+	char SMS_text[SMS_BUF_LEN];
+	int SMS_text_len = 0;
+
+#endif
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -298,6 +351,7 @@ void errLedOn(const char *from);
 void gsmONOFF(uint32_t tw);
 void ClearRxBuf();
 void initQ(s_msg_t *q);
+void clearQ(s_msg_t *q);
 int8_t putQ(char *adr, s_msg_t *q);
 int8_t getQ(char *adr, s_msg_t *q);
 #ifdef SET_JFES
@@ -457,7 +511,7 @@ int main(void)
   const osThreadAttr_t atTask_attributes = {
     .name = "atTask",
     .priority = (osPriority_t) osPriorityHigh,
-    .stack_size = 2560
+    .stack_size = 3072//2560
   };
   atTaskHandle = osThreadNew(StartAtTask, NULL, &atTask_attributes);
 
@@ -913,14 +967,20 @@ uint8_t a, b, c, i;
 //------------------------------------------------------------------------------------------
 void gsmONOFF(uint32_t twait)
 {
+bool vio = getVIO();
+uint32_t tik = twait / 10, cnt = 10;
+
 	flags.gps_log_show = flags.i2c_log_show = flags.combo_log_show = 0;
-	//Report(true, "GSM_KEY set to 0\r\n");
-	Report(true, "GSM_KEY set to 0 (vio=%u)\r\n", getVIO());
+	onGNS = false;
+
+	Report(true, "GSM_KEY set to 0 (vio=%u)\r\n", vio);
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);//set 0
-	HAL_Delay(twait);
+
+	while ((vio == getVIO()) && cnt--) HAL_Delay(tik);
+
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
-	//Report(true, "GSM_KEY set to 1\r\n");
 	Report(true, "GSM_KEY set to 1 (vio=%u)\r\n", getVIO());
+
 	ackYes = 0;
 }
 //-----------------------------------------------------------------------------
@@ -1188,6 +1248,16 @@ void initQ(s_msg_t *q)
 	}
 }
 //-----------------------------------------------------------------------------
+void clearQ(s_msg_t *q)
+{
+	q->put = q->get = 0;
+	for (uint8_t i = 0; i < MAX_QMSG; i++) {
+		q->msg[i].id = i;
+		if (q->msg[i].adr) free(q->msg[i].adr);
+		q->msg[i].adr = NULL;
+	}
+}
+//-----------------------------------------------------------------------------
 int8_t putQ(char *adr, s_msg_t *q)
 {
 int8_t ret = -1;
@@ -1207,7 +1277,7 @@ int8_t ret = -1;
 
 	if (q->msg[q->get].adr != NULL) {
 		ret = q->msg[q->get].id;
-		int len = strlen(q->msg[q->get].adr);// & 0xff;
+		int len = strlen(q->msg[q->get].adr);
 		memcpy(dat, q->msg[q->get].adr, len);
 		*(dat + len) = '\0';
 		free(q->msg[q->get].adr);
@@ -1382,16 +1452,22 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	if (adrByte) HAL_UART_Receive_IT(huart, adrByte, 1);
 }
 //------------------------------------------------------------------------------------------
-void AtParamInit()
+void AtParamInit(bool how)
 {
 	at_rx_uk = 0;
 	memset(AtRxBuf, 0, MAX_UART_BUF);
 	cmdsInd = -1;
-	initQ(&q_at);
-	initQ(&q_cmd);
+	if (how) {//init queue
+		initQ(&q_at);
+		initQ(&q_cmd);
+	} else {//clear queue
+		clearQ(&q_at);
+		clearQ(&q_cmd);
+	}
 	HAL_UART_Receive_IT(portAT, (uint8_t *)&aRxByte, 1);//AT
 }
 //------------------------------------------------------------------------------------------
+/*
 void GpsParamInit()
 {
 //	gps_rx_uk = 0;
@@ -1400,6 +1476,7 @@ void GpsParamInit()
 	initQ(&q_gps);
 //	HAL_UART_Receive_IT(portGPS, (uint8_t *)&gRxByte, 1);//GPS
 }
+*/
 //------------------------------------------------------------------------------------------
 int8_t parse_inf(char *in, s_inf_t *inf)
 {
@@ -1731,7 +1808,502 @@ void toDisplay(const char *st, uint8_t column, uint8_t line, bool clear)
 		  spi_ssd1306_text_xy(st, column, line);
 #endif
 }
+//------------------------------------------------------------------------------------
+#ifdef SET_SMS
+int gsm7bit_to_text(int len_inbuff, uint8_t *inbuff, uint8_t *outbuff, int fl, uint8_t max_udl, uint8_t u_len)
+{
+int dl_ind = 0, i = 0, shift = 1, stop_ = 1, lb = max_udl;
+uint8_t a, b, prev = 0;
+uint8_t *ps1 = inbuff;
+uint8_t *ps2 = outbuff;
+uint8_t words[4] = {0};
+
+	if (!inbuff || !outbuff || !len_inbuff) return dl_ind;
+
+    if (u_len > 0) lb -= (u_len + 1);
+    lb--;
+
+    memcpy(words, ps1 - 2, 2);
+    b = hextobin(words[0], words[1]);
+    if ((b > 0) && (fl)) {
+    	*(uint8_t *)ps2 = b >> 1;
+    	ps2++;
+    	dl_ind++;
+    }
+
+    while (stop_) {
+    	memcpy(words, ps1, 2);
+    	a = hextobin(words[0], words[1]);
+    	ps1 += 2;
+    	i += 2;
+    	b = a;
+    	a <<= (uint8_t)(shift - 1);
+    	a = (a | prev) & 0x7f;
+    	prev = (b >> (8 - shift));
+    	*(uint8_t *)ps2 = a;
+    	ps2++;
+    	dl_ind++;
+    	if (shift != 7) shift++;
+    	else {
+    		*(uint8_t *)ps2 = prev;
+    		ps2++;
+    		dl_ind++;
+    		shift = 1;
+    		prev = 0;
+    	}
+    	if ((dl_ind > lb) || (i >= SMS_BUF_LEN - 1)) stop_=0;
+    }
+
+    return (dl_ind);
+}
+//----------------------------------------------------------------------------------
+//uint8_t uk_udhi[5], dcs_npl[2];
+//char fromik[32];
+int conv_ucs2_text(uint8_t *buffer_txt, uint8_t *uk_udhi, uint8_t *dcs_npl, char *fromik)
+{
+int ret = 0;
+int tt, tt1 = 0, tt_n, tt1_n, len, i = 0, j = 0, k = 0, shift, yes, it = 0, tzone, end_ind = 0;
+char *ps1, *ps_begin, *ps3, *uk_start, *pss, *pss0, *ps_o, *ps_type, *ina2, *qik, *ps0;
+char *uk_start7 = NULL;
+char *ina = NULL;
+char *ina0 = NULL;
+char *ps_sta = NULL;
+char *nachalo = NULL;
+uint16_t dcs;
+uint8_t a, a_n, b, b_n, c, cnpl, prev, dl = 0, dl_ind, new_a;
+uint8_t pdu_type = 0xff, type_num_a, len_num_a, user_data_len = 0, user_data_l = 0, udhi_len = 0, len_sca = 0, tp_mti = 0, tp_vpf = 0;
+char words[5], chcs[12];
+char words1[34], words2[34];
+char stx[256];
+int pdu, pack, ind_tp = 3, stop_, its_ok = 0, ofs = 0, with_udh = 0, flg = 0;
+char udhi_str[32] = {0}, sca_str[32] = {0};
+uint8_t udhi_4[5] = {0};
+uint8_t buffer_temp[SMS_BUF_LEN] = {0};
+
+	if (!buffer_txt) return ret;
+
+    len  =  strlen((char *)buffer_txt);
+//	Report(true, "In : len=%d buf:\r\n'%s'\r\n", len, (char *)buffer_txt);
+
+	if ((len < 7) || (len > 512)) {
+		*buffer_txt = 0;
+		return ret;
+	} else {
+		tt = 0; pdu = 0;
+		ps1 = (char *)&buffer_txt[0];
+		ps0 = nachalo = ps1;
+		ps_begin = ps_sta = ps1;
+		memset(words, 0, sizeof(words));
+		i = j = 0;
+		k = ofs = 0;
+		ina0 = strstr(ps1, "+CMT: ");//+CMT: ,,26    //+CMT: ,26   //+CMT: "",26
+		if (ina0) {
+			ofs = 6;
+			ina = ina0;
+		} else {
+			ina0 = strstr(ps1, "+CMGR: ");
+			if (ina0) { ofs = 7; ina = ina0; }
+			else {
+				ina0 = strstr(ps1, "+CLASS0: ");
+				if (ina0) { ofs = 9; ina = ina0; }
+			}
+		}
+		if (ina) {
+			ina += ofs;
+			//ina2 = strchr(ina, 13);
+			ina2 = strstr(ina, "\r\n");
+			if (ina2) {
+				//ina2++;
+				ina2 += 2;
+				nachalo = ina2;//начало pdu !!!!!!!!!!!!!!!!!!!!!!!!!!
+				if ((ina2 - ps1) < (len - ofs)) its_ok = 1;
+				//
+				//ps0 = strstr(nachalo, "\r\n");
+				//if (ps0) j = ps0 - nachalo;
+				//	else j = strlen(nachalo);
+				//Report(false, "PDU :'%.*s'\r\n", j, nachalo);
+				//---------------------------------------------------------
+				qik = strstr(ina, ",,"); k = 2;
+				if (!qik) {
+					qik = strstr(ina, "\",");
+					if (!qik) {
+						qik = strchr(ina, ',');
+						if (qik) k = 1;
+					} else k = 2;
+				}
+				if (qik) {
+					qik += k;//указатель на начало длинны сообщения в байтах
+					if ((ina2 - qik) > 0) i = ina2 - qik - 1;//это количество символов длинны самого pdu в байтах
+					if ((i > 0) && (i < 4)) {
+						memset(words, 0, sizeof(words));
+						memcpy(words, qik, i);
+						j = atoi(words);//собственно длинна pdu в байтах, указанная с сторке +CMGR: 1,,113
+						j <<= 1;//собственно длинна pdu в символах в строке +CMGR: 1,,113
+						k = strlen(ina2);//принято символов тела pdu
+						if (k > j) {
+							memset(words1, 0, sizeof(words1));
+							memcpy(words1, ina2, 2);
+							i = atoi(words1);//длинна номера sca
+							i <<= 1;
+							len_sca = i;
+							ina2 += i + 2;
+						}
+					}
+				}
+				//---------------------------------------------------------
+				ps1 = ps_begin = ina2;
+				uk_start = ps1;
+			}
+		}
+
+		if (!its_ok) {
+			Report(false, "Sender number not found\r\n");
+			uk_start7 = strstr(ps_begin, "00");
+			if (uk_start7)  {
+				if (uk_start7 == ps_sta) {
+					its_ok = 1;
+					nachalo = uk_start7 + 2;
+					uk_start = nachalo;
+				}
+			}
+		}
+
+
+		if (its_ok) {
+			memset(sca_str, 0, sizeof(sca_str));
+			memset(words, 0, sizeof(words));
+			if (nachalo) {
+				memcpy(words, nachalo, 2); b = hextobin(words[0], words[1]);//sca_len
+				if ((b > 0) && (b <= 7)) memcpy(sca_str, nachalo, (b + 1) << 1);
+				if (!b) nachalo += 2;//1-й байт (длинна) = 0 -> номер смс-центра отсутствует
+				   else nachalo += ((b + 1) << 1);//указатель на pdu_type
+				memset(words, 0, sizeof(words));
+				memcpy(words, nachalo, 2); pdu_type = hextobin(words[0], words[1]);//pdu_type
+				if (pdu_type & 0x40) {
+					with_udh = 1;
+					memset(udhi_str, 0, sizeof(udhi_str));
+					udhi_len = 0;
+				}
+				if (pdu_type & 1) tp_mti = 2; else tp_mti = 0;//есть MR или нет
+				tp_vpf = ((pdu_type >> 3) & 3);//for submit sms
+				uk_start = nachalo;
+			}
+
+			if (len_sca > 0) sprintf(stx, "CMGR/CMT_LEN=%s|%d, got_len=%d, SCA[%d]=%s, PDU_TYPE=0x%02X, ",
+						                   words, j, k, len_sca, sca_str, pdu_type);
+			sprintf(stx, "CMGR/CMT_LEN=%s|%d, got_len=%d, PDU_TYPE=0x%02X", words, j, k, pdu_type);
+			if (len_sca > 0) sprintf(stx+strlen(stx), ", SCA[%d]=%s, ", len_sca, sca_str);
+			if (with_udh) strcat(stx,"With_UDHI");
+					 else strcat(stx,"Without_UDHI");
+			//sprintf(stx+strlen(stx),"\r\nPDU:\r\n%s\r\n", uk_start);
+			Report(false, "%s\r\n", stx);
+
+			ps1 = ps3 = uk_start;
+
+			ps_type = uk_start + 4 + tp_mti;//указатель на тип номера
+			memcpy(words, ps_type, 2);
+			b = hextobin(words[0], words[1]);//тип номера
+			b = (b & 0x70) >> 4; //нужны разряды bit6 bit5 bit4 - это тип номера A
+			type_num_a = b;//тип номера А
+			if (type_num_a > 8) type_num_a = 8;
+			ps1 = ps1 + 2 + tp_mti;//указатель на кол-во символов в номере A - 0x0c
+			memcpy(words, ps1, 2);
+			a = hextobin(words[0], words[1]);
+			if ((a & 1) == 1) a++;
+			if (a > 32) a = 32;
+			new_a = a;
+			len_num_a = a;//длинна номера A !!!!!!!!!!!!!
+			ps1 += 4;//указатель на начало номера A - 0x83
+			memset(words1, 0, sizeof(words1));
+			memcpy(words1, ps1, a); //aa=a;//запомнить длинну номара А !!!!!!!!!!!!!
+			if (b != 5) {//надо переставить местами цифры номера
+				j = 0;
+				while (j < a) {
+					c = words1[j];
+					words1[j] = words1[j + 1];
+					words1[j + 1] = c;
+					j += 2;
+				}
+				if (words1[a - 1] == 'F') words1[a - 1] = ' ';
+			} else {// номер закодирован в GSM-7bit - ПРИКИНЬ !  ВОТ УРОДЫ !!!
+				j = 0; 	i = 0;
+				memset(words2, 0, sizeof(words2));
+				while (j < a) {
+					words2[i] = hextobin(words1[j], words1[j + 1]);
+					i++; j += 2;
+				}
+				//-------------------------------- decoding num_a from GSM-7bit to KOI8-R -----------
+				shift = 1; prev = 0;
+				memset(words1, 0, sizeof(words1));
+				tt_n = tt1_n = 0; dl_ind = 0;
+				dl = i; stop_ = 1;
+				while (stop_) {
+					a_n = words2[tt_n++];
+					b_n = a_n;
+					a_n <<= (uint8_t)(shift - 1);
+					a_n = (a_n | prev) & 0x7f;
+					words1[tt1_n++] = a_n; dl_ind++; prev = (b_n >> (8 - shift));
+					if (shift != 7) shift++;
+							   else { words1[tt1_n++] = prev; dl_ind++; shift = 1; prev = 0; }
+					if (dl_ind > dl) stop_ = 0;
+				}
+				//------------------------------------------------------------------------------------
+				new_a = strlen(words1);
+				a >>= 1;
+			}
+
+			tt1 = 0;
+			end_ind = tt1;//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+			if (fromik) memset(fromik, 0, 32);//макс-ая длинна номера А = 31
+			if (b == 1) buffer_temp[tt1++] = '+';//type_of_num_A = intern....
+			ps_o = (char *)&buffer_temp[tt1];
+			if (new_a > 0) {
+				memcpy(ps_o, words1, new_a);	tt1 += new_a;
+				buffer_temp[tt1++] = 0x20;
+			}
+			memcpy(words, ps1 + len_num_a, 2);	//p_id=myhextobin(words[0], words[1]);
+			pss = ps1 + len_num_a + 2;//указатель на DCS
+
+			memcpy(words, pss, 2);
+			dcs = hextobin(words[0], words[1]);
+			c = (dcs & 0x0c) >> 2;
+			pdu = 0;//default
+			switch (c) {
+				case 0:
+				case 1:
+				case 3: pdu = 0; break;
+				case 2: pdu = 1; break;
+			}
+			if (c > 2) c = 3;
+			ind_tp = c;//индекс типа кодировки, в которой получено сообщение bit3 bit2 в dcs
+			//d = dcs & 0x20;//признак компрессии, bit5 в dcs
+			if ((dcs & 0x20)) pack = 1; else pack = 0;
+
+			cnpl = type_num_a << 4;
+			if (dcs_npl) {
+				*dcs_npl       = cnpl; //TON
+				*(dcs_npl + 1) = c;    //ENC
+			}
+
+			k = strlen(words1);
+			if (words1[k-1] == ' ') words1[k - 1] = '\0';
+//			Report(false, "Called_number : %s\r\n", words1);
+			if (fromik) {
+				k = strlen(words1);
+				if (k > lenFrom - 1) k = lenFrom - 1;
+				memcpy(fromik, words1, k);//макс-ая длинна номера А = 31
+			}
+
+			sprintf(stx, "DCS=0x%02X, ENC[%d]=%s", dcs, ind_tp, tp[ind_tp]);
+			if (new_a > 0) sprintf(stx+strlen(stx),", SENDER: type[%d]=%s number[%d]=%s",
+													type_num_a, type_name_a[type_num_a], new_a, words1);
+			if (pack) sprintf(stx+strlen(stx),", PACK=%d", pack);
+			//
+			//
+			//
+			pss += 2;//указатель на начало области date/time
+			uint8_t byte = 18;
+			if (tp_vpf != 2) {
+				memset(words1, 0, sizeof(words1));
+				memcpy(words1, pss, 14);// 14 символов для date/time
+				j = 0;
+				while (j < 14) {
+					c = words1[j];
+					words1[j] = words1[j + 1];
+					words1[j + 1] = c;
+					j += 2;
+				}
+
+				buffer_temp[tt1++] = 0x32; 	buffer_temp[tt1++] = 0x30; //20+год
+
+				pss = &words1[0];	pss0 = (char *)&buffer_temp[tt1];	  memcpy(pss0, pss, 2);		tt1 += 2;   //год
+				buffer_temp[tt1++] = '/';
+				pss += 2; 		    pss0 = (char *)&buffer_temp[tt1];	  memcpy(pss0, pss, 2);		tt1 += 2;   //месяц
+				buffer_temp[tt1++] = '/';
+				pss += 2; 		    pss0 = (char *)&buffer_temp[tt1];     memcpy(pss0, pss, 2);		tt1 += 2;   //день
+				buffer_temp[tt1++] = 0x20;
+
+				pss += 2; 		    pss0 = (char *)&buffer_temp[tt1];     memcpy(pss0, pss, 2);		tt1 += 2;   //часы
+				buffer_temp[tt1++] = ':';
+				pss += 2; 		    pss0 = (char *)&buffer_temp[tt1];     memcpy(pss0, pss, 2);		tt1 += 2;   //минуты
+				buffer_temp[tt1++] = ':';
+				pss += 2; 		    pss0 = (char *)&buffer_temp[tt1];     memcpy(pss0, pss, 2);		tt1 += 2;   //секунды
+				buffer_temp[tt1++] = '+';
+				pss += 2;
+
+				memset(chcs, 0, sizeof(chcs)); memcpy(chcs, pss, 2); tzone = atoi(chcs); tzone = (tzone * 15) / 60;
+				memset(chcs, 0, sizeof(chcs)); sprintf(chcs, "%02d", tzone); pss = &chcs[0];
+				pss0 = (char *)&buffer_temp[tt1]; memcpy(pss0, pss, 2); tt1 += 2;   //(+02)
+			} else {
+				pss += 2;
+				byte = 6;
+			}
+			tt = (ps1 - ps0) + len_num_a + byte;//указатель на UDL - user data len
+			//buffer_temp[tt1++] = 0x0d;		buffer_temp[tt1++]=0x0a;
+			memcpy(&buffer_temp[tt1], eolin, 2); tt1 += 2;
+			end_ind = tt1;//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+			ps3 = (char *)&buffer_txt[tt];
+			memset(words, 0, sizeof(words));
+			memcpy(words, ps3, 2);
+			dl = hextobin(words[0], words[1]);//длинна тела сообщения
+			dl &= 0xff;
+			user_data_l = user_data_len = dl;
+
+			sprintf(stx+strlen(stx),", UDL=%d[%s]\r\n", user_data_len, words);
+			Report(false, stx);
+
+			tt += 2;//индекс на начало текста сообщения / или на начало udhi
+		}//if (its_ok)
+
+		dl_ind = 0;
+		if (pdu == 1) {//тело сообщения в UCS2
+			if (with_udh) {
+				ps1 = (char *)&buffer_txt[tt];
+				memset(words, 0, sizeof(words));
+				memcpy(words, ps1, 2);
+				udhi_len = hextobin(words[0], words[1]);
+				if (udhi_len <= 32) {
+					memcpy(udhi_str, ps1 + 2, udhi_len << 1);
+					tt += ((udhi_len + 1) << 1);//NEW BODY POINTER
+					dl -= udhi_len + 1;
+					user_data_len = dl;
+				}
+			}
+
+//sprintf(stx,"UCS2:\n");
+//print_msg_sms(stx,1);
+			stop_ = 1;
+			while (stop_) {
+				ps1 = (char *)&buffer_txt[tt];
+				memset(words, 0, sizeof(words));
+				memcpy(words, ps1, 4);
+				yes = 0;
+//sprintf(stx,"[%s] - ",words);
+				for (j = 0; j < cod_PDU_len; j++) {
+					sprintf(chcs, "%04X", cod_PDU[j]);
+					if (!strncmp(words, chcs, 4)) {
+						yes = 1;
+						it = j;
+						break;
+					}
+				}
+				if (yes == 1) buffer_temp[tt1++] = alphabet[it];
+					     else buffer_temp[tt1++] = '.';
+//sprintf(stx+strlen(stx),"[0x%02x|%c] ",buffer_temp[tt1], buffer_temp[tt1]);
+				tt += 4;   dl_ind++;
+				if (((tt + 4) > len) || (dl_ind > dl)) stop_ = 0;
+//sprintf(stx+strlen(stx),"len=%d dl=%d in_idx=%d out_idx=%d dl_ind=%d stop=%d\n",len,dl,tt,tt1,dl_ind,stop_);
+//print_msg_sms(stx,0);
+			}
+		} else {//if (pdu==1)
+			stop_ = 1;
+			switch (ind_tp) {
+				case 0 ://7 bit encoding
+					k = 0;
+					if (with_udh) {
+						ps1 = (char *)&buffer_txt[tt];
+						memset(words, 0, sizeof(words));
+						memcpy(words, ps1, 2);
+						udhi_len = hextobin(words[0], words[1]);
+						if (udhi_len <= 32) {
+							memcpy(udhi_str, ps1 + 2, udhi_len << 1);
+							tt += ((udhi_len + 1) << 1);//NEW BODY POINTER
+							k = 7 - (udhi_len + 1);
+							tt += k << 1;
+							if (k > 0) flg = k; else flg = 0;
+							dl -= udhi_len + 1;
+							k = dl * 7;
+							dl = k >> 3;
+							if (k % 8) dl++;
+							dl &= 0xff;
+							user_data_len = dl;
+//memset(stx,0,512); sprintf(stx+strlen(stx),"udhi_str[%d]:[%s]\n",udhi_len,udhi_str); print_msg_sms(stx,1);
+						}
+					} else {
+						//k = dl * 7; //dl = k >> 3; //if (k%8) dl++; //dl&=0xff; //user_data_len=dl;
+						flg = 0;
+					}
+//memset(stx,0,512); sprintf(stx+strlen(stx),"7bit_to_text: In[%d]=%s\n",dl,(unsigned char *)&buffer_txt[tt]); print_msg_sms(stx,0);
+					dl_ind = gsm7bit_to_text(dl, &buffer_txt[tt], &buffer_temp[end_ind], flg, user_data_l, udhi_len);
+//memset(stx,0,512); sprintf(stx+strlen(stx),"7bit_to_text: Out[%d]=%s\n",dl_ind,(char *)&buffer_temp[tt1]); print_msg_sms(stx,0);
+					tt1 += dl_ind;
+				break;
+				case 1://8 bit encoding
+					if (with_udh) {
+						ps1 = (char *)&buffer_txt[tt];
+						memcpy(words, ps1, 2);
+						udhi_len = hextobin(words[0], words[1]);
+						if (udhi_len <= 32) {
+							memcpy(udhi_str, ps1 + 2, udhi_len << 1);
+							tt += ((udhi_len + 1) << 1);//NEW BODY POINTER
+							dl -= udhi_len + 1;
+							user_data_len = dl;
+						}
+					}
+					while (stop_) {
+						ps1 = (char *)&buffer_txt[tt];
+						memcpy(words, ps1, 2);
+						buffer_temp[tt1++] = hextobin(words[0], words[1]);
+						tt += 2;
+						dl_ind++;
+						if ((tt >= len) || (dl_ind >= dl)) stop_ = 0;
+					}
+				break;
+			}//switch (ind_tp)
+		}//else -> 7 ! 8 bit encoding
+
+		buffer_temp[tt1] = 0;
+
+		if (with_udh) {
+			if (udhi_len >= 5) {
+				udhi_4[0] = 1;//tp
+				a = hextobin(udhi_str[2], udhi_str[3]);
+				b = (udhi_len << 1);
+				if (a == 4) {//2 байта на номер смс
+					b -= 8;
+					udhi_4[1] = hextobin(udhi_str[b], udhi_str[b + 1]);//num_1
+					b += 2;
+				} else {//1 байт на номер смс
+					udhi_4[1] = 0;//num_1
+					b -= 6;
+				}
+				udhi_4[2] = hextobin(udhi_str[b],     udhi_str[b + 1]);//num_2
+				udhi_4[3] = hextobin(udhi_str[b + 2], udhi_str[b + 3]);//total
+				udhi_4[4] = hextobin(udhi_str[b + 4], udhi_str[b + 5]);//part
+			}
+		}
+		if (uk_udhi) memcpy(uk_udhi, udhi_4, 5);
+
+		if (with_udh) {
+			if (TSINPART) end_ind = 0;
+			else {
+				if (udhi_4[4] < 2) end_ind = 0;
+			}
+		} else end_ind = 0;
+
+		if (end_ind > SMS_BUF_LEN - 1) end_ind = 0;
+
+		memcpy(buffer_txt, &buffer_temp[end_ind], SMS_BUF_LEN - 1 - end_ind);
+/*
+		if (with_udh) sprintf(stx,"UDHI(%d): [%s]\nTEXT[%d]:\r\n", udhi_len, udhi_str, dl_ind);
+				else  sprintf(stx,"TEXT[%d]:\r\n", dl_ind);
+		Report(false, stx);
+*/
+		if (with_udh) Report(false,"UDHI(%d): [%s]\r\n", udhi_len, udhi_str);
+
+		ret = dl_ind;
+
+	}
+
+ 	return ret;
+}
 //-----------------------------------------------------------------------------------------
+
+#endif
+
+//-----------------------------------------------------------------------------------------
+
 
 /* USER CODE END 4 */
 
@@ -1749,7 +2321,10 @@ void StartDefTask(void *argument)
 
 	osDelay(1000);
 
-	GpsParamInit();
+	//GpsParamInit();
+	rmc5 = 1;
+	initQ(&q_gps);
+
 	s_inf_t inf;
 	result_t levt;
 	s_data_t iData;
@@ -1961,9 +2536,9 @@ void StartAtTask(void *argument)
 {
   /* USER CODE BEGIN StartAtTask */
 
-	AtParamInit();
+	AtParamInit(true);
 
-	HAL_Delay(1000);
+	HAL_Delay(1200);
 
 	char *uki = msgCMD;
 	const char *buff = NULL;
@@ -1971,6 +2546,7 @@ void StartAtTask(void *argument)
 	uint32_t wait_ack = 0;
 	uint64_t new_cmds = 0, min_ms = 1, max_ms = 6, tms;
 	flags.imei_flag = flags.inf = 0;
+	flags.cmt = 0;
 	char *uk = NULL;
 	uint8_t cnt = 0, max_repeat = 8;
 	bool repeat = false;
@@ -1984,6 +2560,10 @@ void StartAtTask(void *argument)
 	char cmd[80];
 	int dl;
 
+#ifdef SET_SMS
+	uint8_t abcd[5] = {0}, dcs[2] = {0};
+	char fromNum[lenFrom] = {0};
+#endif
 
 	char toScr[SCREEN_SIZE];
 
@@ -1998,9 +2578,11 @@ void StartAtTask(void *argument)
 
 	uint8_t rx_faza = 0;
 	uint8_t faza = 0;
-	//uint32_t tmps = 1250;
-	if (!getVIO()) {
-		gsmONOFF(1250);
+	uint8_t ctn = 5;
+	bool vios = getVIO();
+	uint32_t tmps = 1150;
+	if (!vios) {
+		gsmONOFF(tmps);
 		//evt_gsm = 1;
 	} else {
 		//wait_ack = get_tmr(2);
@@ -2018,25 +2600,17 @@ void StartAtTask(void *argument)
 
 		//-----------------------------------------------------------
 		if (evt_gsm) {
-			uint8_t ctn = 4;
-			if (evt_gsm == 2) {
-				while (getVIO()) {
-					gsmONOFF(1850);//module OFF
-					osDelay(1500);
-					ctn--; if (!ctn) break;
-				};
-				faza = 0;
-			} else {
-				while (!getVIO()) {
-					gsmONOFF(1250);//module ON
-					osDelay(1500);
-					ctn--; if (ctn) break;
-				};
-			}
-			AtParamInit();
+			if (evt_gsm == 2) tmps = 1750; else tmps = 1150;
+			vios = getVIO();
+			while ((vios == getVIO()) && ctn--) {
+				gsmONOFF(tmps);//module OFF
+				osDelay(1500);
+			};
+			faza = 0;
+			AtParamInit(false);
 			gprs_stat.init = gprs_stat.connect = 0;
 			flags.imei_flag = flags.auto_cmd = flags.inf = 0;
-			//Report(true, "evt_gsm=%u vio=%u\r\n", evt_gsm, getVIO());
+			ctn = 5;
 			evt_gsm = 0;
 		}
 		//-----------------------------------------------------------
@@ -2309,6 +2883,7 @@ void StartAtTask(void *argument)
 							new_cmds = get_hstmr(tms);
 						}
 					}//"ERROR" || "OK" || "CLOSE" || '>' || "+BTSCAN: 1" -> next cmd enable (cmdsDone = true; wait_ack = 0;)
+
 					//
 					if (strstr(msgAT, "ALREADY CONNECT")) {
 						gprs_stat.connect = 1;
@@ -2319,9 +2894,38 @@ void StartAtTask(void *argument)
 						HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);
 					}
 					//
+#ifdef SET_SMS
+					if (strstr(msgAT, "+CMT: ")) {
+						flags.cmt = 1;
+						memset(SMS_text, 0, SMS_BUF_LEN);
+						SMS_text_len = strlen(msgAT);
+						if (SMS_text_len > SMS_BUF_LEN - 1) SMS_text_len = SMS_BUF_LEN - 1;
+						memcpy(SMS_text, msgAT, SMS_text_len);
+					} else {
+						if (flags.cmt) {
+							int j = strlen(SMS_text);
+							if ((j + strlen(msgAT)) < SMS_BUF_LEN) {
+								if (strlen(msgAT)) Report(false, msgAT);
+								memcpy(&SMS_text[j], msgAT, strlen(msgAT));
+								SMS_text_len = strlen(SMS_text);
+								memset(fromNum, 0, sizeof(fromNum));
+								if (conv_ucs2_text((uint8_t *)SMS_text, abcd, dcs, fromNum) > 0) {
+									strcpy(msgGPRS, "[SMS] abcd:");
+									for (j = 0; j < sizeof(abcd); j++) sprintf(msgGPRS+strlen(msgGPRS), "%02X", abcd[j]);
+									sprintf(msgGPRS+strlen(msgGPRS), " dcs=%02X%02X from='%s' body:", dcs[0], dcs[1], fromNum);
+									Report(true, "%s\r\n", msgGPRS);
+									Report(false, "%s\r\n", SMS_text);
+								}
+								memset(msgAT, 0, sizeof(msgAT));
+							}
+							flags.cmt = 0;
+						}
+					}
+#endif
+					//
 				}
 
-				Report(false, msgAT);
+				if (strlen(msgAT)) Report(false, msgAT);
 
 				if (counter >= 5) {
 					counter = 0;
@@ -2334,19 +2938,7 @@ void StartAtTask(void *argument)
 		}
 
 		//---------------------------------------------------------------------------
-/*
-		if (evt_gsm) {
-			if (evt_gsm == 2) tmps = 1850;//module OFF
-						 else tmps = 1250;//module ON
-			evt_gsm = 0;
-			if (!getVIO()) {
-				AtParamInit();
-				gsmONOFF(tmps);
-				gprs_stat.init = gprs_stat.connect = 0;
-				flags.imei_flag = flags.auto_cmd = flags.inf = 0;
-			}
-		}
-*/
+
 		if (flags.srv) {
 			flags.srv = 0;
 			Report(true, "NEW SERVER : %s:%u\r\n", srv_adr, srv_port);
@@ -2361,7 +2953,7 @@ void StartAtTask(void *argument)
 			Report(true, "GSM VIO is %u\r\n", getVIO());
 		}
 
-		osDelay(2);
+		osDelay(1);
 
 	}
 

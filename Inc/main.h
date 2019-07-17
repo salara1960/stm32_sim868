@@ -111,7 +111,7 @@ typedef struct {
 	unsigned auto_cmd:1;
 	unsigned inf:1;
 	unsigned vio:1;
-	unsigned unused:1;
+	unsigned cmt:1;
 } s_flags;
 #pragma pack(pop)
 
@@ -200,6 +200,12 @@ SPI_HandleTypeDef *portSPI;
 	#define MAX_UART_BUF 704//640//512//480//400//384//256
 #else
 	#define MAX_UART_BUF 640//512//480//400//384//256
+#endif
+
+#ifdef SET_SMS
+	#define SMS_BUF_LEN 481
+	#define cod_PDU_len 159
+	#define lenFrom 32
 #endif
 
 /* USER CODE END EM */
