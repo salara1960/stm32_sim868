@@ -187,11 +187,11 @@ uint8_t first[] = {
 void spi_ssd1306_text(const char *stroka)
 {
 	if (stroka) {
-		if (!i2cError) {
+		//if (!i2cError) {
 			spi_ssd1306_text_xy(stroka, 1, 1);
-		} else {
-			errLedOn(__func__);
-		}
+		//} else {
+		//	errLedOn(__func__);
+		//}
 	}
 }
 //******************************************************************************************

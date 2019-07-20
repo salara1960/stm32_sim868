@@ -22,8 +22,8 @@
 #define BH1750_OT_HRES_MODE2   0x21 //120ms 0.5lx resolution
 #define BH1750_OT_LRES_MODE    0x23 //16ms 4lx resolution
 
-void bh1750_off();
-void bh1750_on_mode();
-HAL_StatusTypeDef bh1750_proc(uint16_t *lux);
+extern void bh1750_off();
+extern void bh1750_on_mode();
+extern HAL_StatusTypeDef bh1750_proc(uint16_t *lux);
 
 #endif /* BH1750_H_ */

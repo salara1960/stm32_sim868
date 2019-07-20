@@ -57,11 +57,11 @@ typedef struct bmp280_calib_t {
 } bmx280_calib_t;
 
 
-HAL_StatusTypeDef i2c_master_read_sensor(uint8_t reg, uint8_t *data_rd, size_t size);
-HAL_StatusTypeDef i2c_master_reset_sensor(uint8_t *chip_id);
-HAL_StatusTypeDef i2c_master_test_sensor(uint8_t *stat, uint8_t *mode, uint8_t *conf, uint8_t chip_id);
-HAL_StatusTypeDef bmp280_readCalibrationData(uint8_t chip_id);
-void bmp280_CalcAll(result_t *ssen, int32_t chip_id, int32_t tp, int32_t pp, int32_t hh);
+extern HAL_StatusTypeDef i2c_master_read_sensor(uint8_t reg, uint8_t *data_rd, size_t size);
+extern HAL_StatusTypeDef i2c_master_reset_sensor(uint8_t *chip_id);
+extern HAL_StatusTypeDef i2c_master_test_sensor(uint8_t *stat, uint8_t *mode, uint8_t *conf, uint8_t chip_id);
+extern HAL_StatusTypeDef bmp280_readCalibrationData(uint8_t chip_id);
+extern void bmp280_CalcAll(result_t *ssen, int32_t chip_id, int32_t tp, int32_t pp, int32_t hh);
 
 #endif /* __BMP280_H__ */
 

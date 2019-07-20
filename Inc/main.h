@@ -173,19 +173,18 @@ typedef struct {
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
 
-HAL_StatusTypeDef i2cError;
-const uint32_t min_wait_ms;
-const uint32_t max_wait_ms;
-
-I2C_HandleTypeDef *portBMP;
+extern const uint32_t min_wait_ms;
+extern const uint32_t max_wait_ms;
+extern HAL_StatusTypeDef i2cError;
+extern I2C_HandleTypeDef *portBMP;
 #ifdef SET_OLED_I2C
-	I2C_HandleTypeDef *portSSD;
+	extern I2C_HandleTypeDef *portSSD;
 #endif
-I2C_HandleTypeDef *portBH;
-UART_HandleTypeDef *portLOG;
-SPI_HandleTypeDef *portSPI;
+extern I2C_HandleTypeDef *portBH;
+extern UART_HandleTypeDef *portLOG;
+extern SPI_HandleTypeDef *portSPI;
 #ifdef SET_OLED_SPI
-	SPI_HandleTypeDef *portOLED;
+	extern SPI_HandleTypeDef *portOLED;
 #endif
 
 /* USER CODE END EC */
@@ -196,6 +195,8 @@ SPI_HandleTypeDef *portSPI;
 
 #define wait_sensor_def 32
 #define wait_gps_def wait_sensor_def - 2 //>> 1
+#define wait_ack_cli_sec 10
+
 #ifdef SET_JFES
 	#define MAX_UART_BUF 704//640//512//480//400//384//256
 #else
@@ -203,21 +204,21 @@ SPI_HandleTypeDef *portSPI;
 #endif
 
 #ifdef SET_SMS
-	#define SMS_BUF_LEN 481
-	#define cod_PDU_len 159
+	#define SMS_BUF_LEN 512
+	#define cod_PDU_len 159 //137
 	#define lenFrom 32
 #endif
 
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
-void Error_Handler(void);
+extern void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
 
-void Report(bool addTime, const char *fmt, ...);
-void errLedOn(const char *from);
-void Leds(bool act, uint16_t Pin);
+extern void Report(bool addTime, const char *fmt, ...);
+extern void errLedOn(const char *from);
+extern void Leds(bool act, uint16_t Pin);
 
 /* USER CODE END EFP */
 

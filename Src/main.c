@@ -83,7 +83,9 @@
 //const char *ver = "ver 2.8rc3";//13.07.2019 - minor changes+++++
 //const char *ver = "ver 2.9rc1";//15.07.2019 - major changes : add VIO -> GSM_STATUS pin (PA2) - pin42 module sim868
 //const char *ver = "ver 3.0rc1";//16.07.2019 - major changes : add sms support - step 1 ('+CMT:' mode)
-const char *ver = "ver 3.0rc2";//17.07.2019 - minor changes : '+CMT:' continue - support Data coding: GSM7bit
+//const char *ver = "ver 3.0rc2";//17.07.2019 - minor changes : '+CMT:' continue - support Data coding: GSM7bit
+const char *ver = "ver 3.0rc3";//20.07.2019 - minor changes : sms mode edit continue
+
 
 
 /*
@@ -134,6 +136,8 @@ osMessageQueueId_t mailQueueHandle;
 osSemaphoreId_t binSemHandle;
 /* USER CODE BEGIN PV */
 
+const uint32_t ModuleOFF = 1750;
+const uint32_t ModuleON  = 1150;
 
 const char *dev_name = "STM32_SIM868";
 char devID[16] = {0};//imei of gsm module
@@ -141,11 +145,9 @@ char devID[16] = {0};//imei of gsm module
 volatile static uint32_t secCounter = 0;//period 1s
 volatile static uint64_t HalfSecCounter = 0;//period 250ms
 
-
-HAL_StatusTypeDef i2cError = HAL_OK;
 const uint32_t min_wait_ms = 150;
 const uint32_t max_wait_ms = 1000;
-
+HAL_StatusTypeDef i2cError = HAL_OK;
 I2C_HandleTypeDef *portBMP;
 #ifdef SET_OLED_I2C
 	I2C_HandleTypeDef *portSSD;
@@ -156,6 +158,7 @@ UART_HandleTypeDef *portLOG;//huart3;
 #ifdef SET_OLED_SPI
 	SPI_HandleTypeDef *portOLED;//hspi3;
 #endif
+
 static const char *_extDate = "DATE:";
 bool evt_clear = false;
 static bool setDate = false;
@@ -163,12 +166,12 @@ static bool setDate = false;
 	static bool epochSet = false;
 	volatile static uint32_t extDate = 0;
 #endif
+
 static char DefBuf[MAX_UART_BUF];
 
 static char RxBuf[MAX_UART_BUF];
 volatile uint8_t rx_uk;
 uint8_t lRxByte;
-
 
 volatile uint8_t rmc5 = 8;//6;
 char msgNMEA[MAX_UART_BUF] = {0};
@@ -182,7 +185,6 @@ static char AtRxBuf[MAX_UART_BUF];
 volatile uint8_t at_rx_uk;
 uint8_t aRxByte;
 uint8_t adone = 0;
-//uint32_t atCounter = 0;
 char msgAT[MAX_UART_BUF] = {0};
 static s_msg_t q_at;
 static uint8_t evt_gsm = 0;
@@ -192,7 +194,7 @@ static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
-const uint8_t cmdsMax = 18;//19;//21;
+const uint8_t cmdsMax = 20-7;//19;//21;
 const char *cmds[] = {
 	"AT\r\n",
 	"AT+CMEE=0\r\n",
@@ -200,24 +202,24 @@ const char *cmds[] = {
 	"AT+GSN\r\n",//get IMEI
 	"AT+CNMI=1,2,0,1,0\r\n",
 	"AT+SCLASS0=0\r\n",
-//	"AT+CPMS=\"SM\",\"SM\",\"SM\"\r\n",
+	"AT+CPMS=\"SM\",\"SM\",\"SM\"\r\n",
 	"AT+CMGF=0\r\n",//;+CLIP=1\r\n",
 //	"AT+CIMI\r\n",//get IMCI
 //	"AT+CMGF=1\r\n",//text mode
-//	"AT+CSCS=\"IRA\"\r\n",
+	"AT+CSCS=\"IRA\"\r\n",
 	"AT+CGNSPWR=1\r\n",// power for GPS/GLONASS ON
 	"AT+CGNSPWR?\r\n",//check power for GPS/GLONASS status
 //	"AT+CCLK?\r\n",//get date/time
 	"AT+CREG?\r\n",
-	"AT+CSQ\r\n",//get RSSI
+	"AT+CSQ\r\n"//get RSSI
 //	"AT+CENG=1\r\n",//Switch on engineering mode
-	"AT+CGDCONT=1,\"IP\",\"internet.beeline.ru\"\r\n",
+/*	"AT+CGDCONT=1,\"IP\",\"internet.beeline.ru\"\r\n",
 	"AT+CSTT=\"internet.beeline.ru\",\"beeline\",\"beeline\"\r\n",
 	"AT+CGACT=1,1\r\n",
 	"AT+CIICR\r\n",
 	"AT+CGATT?\r\n",
 	"AT+CGATT=1\r\n",
-	"AT+CIFSR\r\n"
+	"AT+CIFSR\r\n"*/
 //	"AT+CENG?\r\n"
 };
 
@@ -226,6 +228,7 @@ const char *srv_adr_def = "127.0.0.1";
 const uint16_t srv_port_def = 9192;
 static char srv_adr[64] = {0};
 static uint16_t srv_port;
+
 const char *gprsDISCONNECT = "AT+CIPCLOSE\r\n";
 char msgGPRS[MAX_UART_BUF] = {0};
 const char *conStatus[] = {"Discon.", "Connect"};
@@ -234,15 +237,10 @@ volatile static bool LoopAll = true;
 uint8_t *adrByte = NULL;
 volatile s_flags flags = {0};
 volatile s_gprs_stat gprs_stat = {0};
-
 osMessageQueueId_t mqData;
-uint32_t dataCounter = 0;
 uint32_t infCounter = 0;
-
 s_gsm_stat gsm_stat = {0};
-
 const char *gpsINF = "AT+CGNSINF\r\n";
-
 static bool con_dis = 0;
 
 const uint8_t maxItems = 26;//30;
@@ -286,15 +284,13 @@ const char *Items[] = {
 
 #ifdef SET_SMS
 
-	const char *tp[4] =
-	{
+	const char *tp[4] = {//тип кодирования
 		"GSM-7bit",
 		"GSM-8bit",
 		"UCS2",
 		"???"
 	};
-	const char *type_name_a[9] =
-	{
+	const char *type_name_a[9] = {//тип номера
 		"unknown",
 		"International",
 		"National",
@@ -305,21 +301,40 @@ const char *Items[] = {
 		"reserved",
 		"???"
 	};
-
-	char alphabet[] ="@ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 !\"#$%&'()*+,-./:;<=>?АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя\n\r`эijIЭ";
-	uint16_t cod_PDU[cod_PDU_len] =
-	{
+	char alphabet[] = "@ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 !\"#$%&'()*+,-./:;<=>?АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя\n\r`эijIЭ";
+	uint16_t cod_PDU[] = {
 	    0x0040,0x0041,0x0042,0x0043,0x0044,0x0045,0x0046,0x0047,0x0048,0x0049,0x004A,0x004B,0x004C,0x004D,0x004E,0x004F,
 	    0x0050,0x0051,0x0052,0x0053,0x0054,0x0055,0x0056,0x0057,0x0058,0x0059,0x005A,0x0061,0x0062,0x0063,0x0064,0x0065,
 	    0x0066,0x0067,0x0068,0x0069,0x006A,0x006B,0x006C,0x006D,0x006E,0x006F,0x0070,0x0071,0x0072,0x0073,0x0074,0x0075,
 	    0x0076,0x0077,0x0078,0x0079,0x007A,0x0030,0x0031,0x0032,0x0033,0x0034,0x0035,0x0036,0x0037,0x0038,0x0039,0x0020,
 	    0x0021,0x0022,0x0023,0x0024,0x0025,0x0026,0x0027,0x0028,0x0029,0x002A,0x002B,0x002C,0x002D,0x002E,0x002F,0x003A,
-	    0x003B,0x003C,0x003D,0x003E,0x003F,0x0410,0x0411,0x0412,0x0413,0x0414,0x0415,0x0401,0x0416,0x0417,0x0418,0x0419,
-	    0x041A,0x041B,0x041C,0x041D,0x041E,0x041F,0x0420,0x0421,0x0422,0x0423,0x0424,0x0425,0x0426,0x0427,0x0428,0x0429,
-	    0x042A,0x042B,0x042C,0x042D,0x042E,0x042F,0x0430,0x0431,0x0432,0x0433,0x0434,0x0435,0x00B8,0x0436,0x0437,0x0438,
-	    0x0439,0x043A,0x043B,0x043C,0x043D,0x043E,0x043F,0x0440,0x0441,0x0442,0x0443,0x0444,0x0445,0x0446,0x0447,0x0448,
-	    0x0449,0x044A,0x044B,0x044C,0x044D,0x044E,0x044F,0x000A,0x000D,0x0060,0x0454,0x0456,0x0457,0x0406,0x0404
+	    0x003B,0x003C,0x003D,0x003E,0x003F,
+		0x0410,0x0411,0x0412,0x0413,0x0414,0x0415,0x0401,0x0416,0x0417,0x0418,0x0419,0x041A,0x041B,0x041C,0x041D,0x041E,
+		0x041F,0x0420,0x0421,0x0422,0x0423,0x0424,0x0425,0x0426,0x0427,0x0428,0x0429,0x042A,0x042B,0x042C,0x042D,0x042E,
+		0x042F,0x0430,0x0431,0x0432,0x0433,0x0434,0x0435,0x00B8,0x0436,0x0437,0x0438,0x0439,0x043A,0x043B,0x043C,0x043D,
+		0x043E,0x043F,0x0440,0x0441,0x0442,0x0443,0x0444,0x0445,0x0446,0x0447,0x0448,0x0449,0x044A,0x044B,0x044C,0x044D,
+		0x044E,0x044F,0x000A,0x000D,0x0060,0x0454,0x0456,0x0457,0x0406,0x0404
 	};
+/*
+	char alphabet[] = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЬЪЭЮЯабвгдеёжзийклмнопрстуфхцчшщэюяABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'-* :;)(.,!=_";
+	char cod_PDU[][4] = {
+	        "0410","0411","0412","0413","0414","0415","00A8","0416","0417",
+	        "0418","0419","041A","041B","041C","041D","041E","041F","0420",
+	        "0421","0422","0423","0424","0425","0426","0427","0428","0429",
+	        "042C","042A","042D","042E","042F","0430","0431","0432","0433",
+	        "0434","0435","00B8","0436","0437","0438","0439","043A","043B",
+	        "043C","043D","043E","043F","0440","0441","0442","0443","0444",
+	        "0445","0446","0447","0448","0449","044D","044E","044F","0041",
+	        "0042","0043","0044","0045","0046","0047","0048","0049","004A",
+	        "004B","004C","004D","004E","004F","0050","0051","0052","0053",
+	        "0054","0055","0056","0057","0058","0059","005A","0061","0062",
+	        "0063","0064","0065","0066","0067","0068","0069","006A","006B",
+	        "006C","006D","006E","006F","0070","0071","0072","0073","0074",
+	        "0075","0076","0077","0078","0079","007A","0030","0031","0032",
+	        "0033","0034","0035","0036","0037","0038","0039","0027","002D",
+	        "002A","0020","003A","003B","0029","0028","002E","002C","0021",
+	        "003D","005F"};
+*/
 	const char *eolin = "\r\n";
 	int TSINPART = 0;
 	char SMS_text[SMS_BUF_LEN];
@@ -340,23 +355,20 @@ static void MX_UART4_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_SPI3_Init(void);
 static void MX_RTC_Init(void);
-void StartDefTask(void *argument); // for v2
-void StartSensTask(void *argument); // for v2
-void StartAtTask(void *argument); // for v2
+void StartDefTask(void *argument);
+void StartSensTask(void *argument);
+void StartAtTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
 void Report(bool addTime, const char *fmt, ...);
 void errLedOn(const char *from);
-void gsmONOFF(uint32_t tw);
+void gsmONOFF(const uint32_t tw);
 void ClearRxBuf();
 void initQ(s_msg_t *q);
 void clearQ(s_msg_t *q);
 int8_t putQ(char *adr, s_msg_t *q);
 int8_t getQ(char *adr, s_msg_t *q);
-#ifdef SET_JFES
-//	void *getMem(size_t sz);
-#endif
 
 /* USER CODE END PFP */
 
@@ -441,7 +453,7 @@ int main(void)
     srv_port = srv_port_def;
 
 #ifdef SET_JFES
-    conf.jfes_malloc = (jfes_malloc_t)malloc;//getMem,//pvPortMalloc,
+    conf.jfes_malloc = (jfes_malloc_t)malloc;//pvPortMalloc,
     conf.jfes_free = free;//vPortFree;
     jconf = &conf;
 #endif
@@ -511,7 +523,7 @@ int main(void)
   const osThreadAttr_t atTask_attributes = {
     .name = "atTask",
     .priority = (osPriority_t) osPriorityHigh,
-    .stack_size = 3072//2560
+    .stack_size = 3072
   };
   atTaskHandle = osThreadNew(StartAtTask, NULL, &atTask_attributes);
 
@@ -965,12 +977,14 @@ uint8_t a, b, c, i;
     return a;
 }
 //------------------------------------------------------------------------------------------
-void gsmONOFF(uint32_t twait)
+void gsmONOFF(const uint32_t twait)
 {
 bool vio = getVIO();
 uint32_t tik = twait / 10, cnt = 10;
 
-	flags.gps_log_show = flags.i2c_log_show = flags.combo_log_show = 0;
+	flags.gps_log_show   = 0;
+	flags.i2c_log_show   = 0;
+	flags.combo_log_show = 0;
 	onGNS = false;
 
 	Report(true, "GSM_KEY set to 0 (vio=%u)\r\n", vio);
@@ -1013,22 +1027,26 @@ void inc_secCounter()
 	secCounter++;
 }
 //-----------------------------------------------------------------------------
+
 #ifndef SET_RTC_TMR
-uint32_t get_extDate()
-{
-	return extDate;
-}
-//-----------------------------------------------------------------------------
-void inc_extDate()
-{
-	extDate++;
-}
-//-----------------------------------------------------------------------------
-void set_extDate(uint32_t ep)
-{
-	extDate = ep;
-}
+	//-----------------------------------------------------------------------------
+	uint32_t get_extDate()
+	{
+		return extDate;
+	}
+	//-----------------------------------------------------------------------------
+	void inc_extDate()
+	{
+		extDate++;
+	}
+	//-----------------------------------------------------------------------------
+	void set_extDate(uint32_t ep)
+	{
+		extDate = ep;
+	}
+	//-----------------------------------------------------------------------------
 #endif
+
 //-----------------------------------------------------------------------------
 uint64_t get_hsCounter()
 {
@@ -1295,9 +1313,12 @@ int i31;
 	char *uki = strchr(uk, ':');
 	if (uki) {
 		i31 = atoi(uki + 1);
-		if ((i31 > 0) && (i31 < 65530)) srv_port = i31;
+		if ((i31 > 0) && (i31 <= 65530)) srv_port = i31;
 		i31 = uki - uk;
-	} else i31 = strlen(uk);
+	} else {
+		i31 = strlen(uk);
+	}
+
 	if (i31 > 0) {
 		if (i31 >= sizeof(srv_adr)) i31 = sizeof(srv_adr) - 1;
 		memcpy(srv_adr, uk, i31);
@@ -1311,10 +1332,12 @@ void getAT()
 		if (aRxByte >= 0x20) adone = 1;
 		if (adone) AtRxBuf[at_rx_uk++] = (char)aRxByte;
 	}
+
 	if (at_rx_uk > 0) {
 		if ( ( (aRxByte == 0x0a) || (aRxByte == 0x3e) ) && adone) {// '\n' || '>'
 			if (aRxByte != 0x3e) strcat(AtRxBuf, "\r\n");
-			if (LoopAll) {
+
+			if (LoopAll) {//-----------------------------------------------------
 				int len = strlen(AtRxBuf);
 				char *buff = (char *)calloc(1, len + 1);
 				if (buff) {
@@ -1327,7 +1350,8 @@ void getAT()
 					}
 					if (sta < 0) free(buff);
 				}
-			}
+			}//------------------------------------------------------------------
+
 			at_rx_uk = adone = 0;
 			memset(AtRxBuf, 0, MAX_UART_BUF);
 		}
@@ -1359,13 +1383,12 @@ void LogData()
 		} else {
 				if (strstr(RxBuf, "INF:")) {
 					flags.inf = 1; priz = 1;
-					//flags.msg_begin = 1;
 				} else if (strstr(RxBuf, "GET:")) {
 					flags.msg_begin = 1;
 					priz = true;
 				} else if ((uk = strstr(RxBuf, "SRV:")) != NULL) {
 					getAdrPort(uk + 4);
-					*(uk + 4) = 0;
+					*(uk + 4) = '\0';
 					flags.srv = 1; priz = true;
 				} else if (strstr(RxBuf, "CON:")) {
 					flags.connect = 1; priz = true;
@@ -1404,6 +1427,7 @@ void LogData()
 					} else {
 						if ((uk = strchr(RxBuf, '\r')) != NULL) *uk = '\0';
 					}
+
 					if (LoopAll) {
 						int len = strlen(RxBuf);
 						char *buff = (char *)calloc(1, len + 1);
@@ -1412,9 +1436,11 @@ void LogData()
 							if (putQ(buff, &q_cmd) < 0) free(buff);
 						}
 					}
+
 				}
 
 			if (priz) {
+
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 	#ifdef SET_OLED_I2C
 				i2c_ssd1306_clear_line(4);
@@ -1432,7 +1458,8 @@ void LogData()
 				spi_ssd1306_text_xy(RxBuf, ssd1306_calcx(l), 4);
 	#endif
 #endif
-			}
+
+			}//if (priz)
 		}
 		ClearRxBuf();
 	}
@@ -1442,6 +1469,7 @@ void LogData()
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	adrByte = NULL;
+
 	if (huart->Instance == UART4) {// portAT - at_commands
 		getAT();
 		adrByte = &aRxByte;
@@ -1449,6 +1477,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		LogData();
 		adrByte = &lRxByte;
 	}
+
 	if (adrByte) HAL_UART_Receive_IT(huart, adrByte, 1);
 }
 //------------------------------------------------------------------------------------------
@@ -1464,19 +1493,9 @@ void AtParamInit(bool how)
 		clearQ(&q_at);
 		clearQ(&q_cmd);
 	}
+
 	HAL_UART_Receive_IT(portAT, (uint8_t *)&aRxByte, 1);//AT
 }
-//------------------------------------------------------------------------------------------
-/*
-void GpsParamInit()
-{
-//	gps_rx_uk = 0;
-	rmc5 = 1;
-//	memset(GpsRxBuf, 0, MAX_UART_BUF);
-	initQ(&q_gps);
-//	HAL_UART_Receive_IT(portGPS, (uint8_t *)&gRxByte, 1);//GPS
-}
-*/
 //------------------------------------------------------------------------------------------
 int8_t parse_inf(char *in, s_inf_t *inf)
 {
@@ -1578,10 +1597,6 @@ int8_t parse_inf(char *in, s_inf_t *inf)
 //-----------------------------------------------------------------------------------------
 #ifdef SET_JFES
 
-//void *getMem(size_t sz)
-//{
-//	return (calloc(1, sz));
-//}
 //-----------------------------------------------------------------------------------------
 int makeInfJsonString(const s_data_t *data, char *buf, int max_len_buf)
 {
@@ -1780,7 +1795,12 @@ int8_t makeInfString(const s_data_t *data, char *buf, int max_len_buf)
 				} else memset(tmp, 0, sizeof(tmp));
 				break;
 		}//switch (i)
-		if (len < max_len_buf) sprintf(buf+strlen(buf), "%s", tmp); else break;
+
+		if (len < max_len_buf)
+			sprintf(buf+strlen(buf), "%s", tmp);
+		else
+			break;
+
 	}//for
 
 	strcat(buf, "}");
@@ -1791,6 +1811,7 @@ int8_t makeInfString(const s_data_t *data, char *buf, int max_len_buf)
 //-----------------------------------------------------------------------------------------
 void toDisplay(const char *st, uint8_t column, uint8_t line, bool clear)
 {
+
 #ifdef SET_OLED_I2C
 	  if (!i2cError) {
 		  if (clear) i2c_ssd1306_clear_line(line);
@@ -1800,6 +1821,7 @@ void toDisplay(const char *st, uint8_t column, uint8_t line, bool clear)
 			  i2c_ssd1306_text_xy(st, column, line);
 	  }
 #endif
+
 #ifdef SET_OLED_SPI
 	  if (clear) spi_ssd1306_clear_line(line);
 	  if (!column)
@@ -1807,12 +1829,13 @@ void toDisplay(const char *st, uint8_t column, uint8_t line, bool clear)
 	  else
 		  spi_ssd1306_text_xy(st, column, line);
 #endif
+
 }
 //------------------------------------------------------------------------------------
 #ifdef SET_SMS
 int gsm7bit_to_text(int len_inbuff, uint8_t *inbuff, uint8_t *outbuff, int fl, uint8_t max_udl, uint8_t u_len)
 {
-int dl_ind = 0, i = 0, shift = 1, stop_ = 1, lb = max_udl;
+int dl_ind = 0, i = 0, shift = 1, lb = max_udl;
 uint8_t a, b, prev = 0;
 uint8_t *ps1 = inbuff;
 uint8_t *ps2 = outbuff;
@@ -1831,7 +1854,7 @@ uint8_t words[4] = {0};
     	dl_ind++;
     }
 
-    while (stop_) {
+    while (1) {
     	memcpy(words, ps1, 2);
     	a = hextobin(words[0], words[1]);
     	ps1 += 2;
@@ -1851,14 +1874,12 @@ uint8_t words[4] = {0};
     		shift = 1;
     		prev = 0;
     	}
-    	if ((dl_ind > lb) || (i >= SMS_BUF_LEN - 1)) stop_=0;
+    	if ((dl_ind > lb) || (i >= SMS_BUF_LEN - 1)) break;
     }
 
     return (dl_ind);
 }
 //----------------------------------------------------------------------------------
-//uint8_t uk_udhi[5], dcs_npl[2];
-//char fromik[32];
 int conv_ucs2_text(uint8_t *buffer_txt, uint8_t *uk_udhi, uint8_t *dcs_npl, char *fromik)
 {
 int ret = 0;
@@ -1871,11 +1892,12 @@ char *ps_sta = NULL;
 char *nachalo = NULL;
 uint16_t dcs;
 uint8_t a, a_n, b, b_n, c, cnpl, prev, dl = 0, dl_ind, new_a;
-uint8_t pdu_type = 0xff, type_num_a, len_num_a, user_data_len = 0, user_data_l = 0, udhi_len = 0, len_sca = 0, tp_mti = 0, tp_vpf = 0;
+uint8_t pdu_type = 0xff, type_num_a, len_num_a, user_data_len = 0;
+uint8_t user_data_l = 0, udhi_len = 0, len_sca = 0, tp_mti = 0, tp_vpf = 0;
 char words[5], chcs[12];
 char words1[34], words2[34];
 char stx[256];
-int pdu, pack, ind_tp = 3, stop_, its_ok = 0, ofs = 0, with_udh = 0, flg = 0;
+int pdu, pack, ind_tp = 3, its_ok = 0, ofs = 0, with_udh = 0, flg = 0;
 char udhi_str[32] = {0}, sca_str[32] = {0};
 uint8_t udhi_4[5] = {0};
 uint8_t buffer_temp[SMS_BUF_LEN] = {0};
@@ -1910,18 +1932,11 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 		}
 		if (ina) {
 			ina += ofs;
-			//ina2 = strchr(ina, 13);
 			ina2 = strstr(ina, "\r\n");
 			if (ina2) {
-				//ina2++;
 				ina2 += 2;
 				nachalo = ina2;//начало pdu !!!!!!!!!!!!!!!!!!!!!!!!!!
 				if ((ina2 - ps1) < (len - ofs)) its_ok = 1;
-				//
-				//ps0 = strstr(nachalo, "\r\n");
-				//if (ps0) j = ps0 - nachalo;
-				//	else j = strlen(nachalo);
-				//Report(false, "PDU :'%.*s'\r\n", j, nachalo);
 				//---------------------------------------------------------
 				qik = strstr(ina, ",,"); k = 2;
 				if (!qik) {
@@ -1933,7 +1948,7 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 				}
 				if (qik) {
 					qik += k;//указатель на начало длинны сообщения в байтах
-					if ((ina2 - qik) > 0) i = ina2 - qik - 1;//это количество символов длинны самого pdu в байтах
+					if ((ina2 - qik) > 0) i = ina2 - qik - 1;//количество символов длинны самого pdu в байтах
 					if ((i > 0) && (i < 4)) {
 						memset(words, 0, sizeof(words));
 						memcpy(words, qik, i);
@@ -1973,12 +1988,14 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 			memset(sca_str, 0, sizeof(sca_str));
 			memset(words, 0, sizeof(words));
 			if (nachalo) {
-				memcpy(words, nachalo, 2); b = hextobin(words[0], words[1]);//sca_len
+				memcpy(words, nachalo, 2);
+				b = hextobin(words[0], words[1]);//sca_len
 				if ((b > 0) && (b <= 7)) memcpy(sca_str, nachalo, (b + 1) << 1);
 				if (!b) nachalo += 2;//1-й байт (длинна) = 0 -> номер смс-центра отсутствует
 				   else nachalo += ((b + 1) << 1);//указатель на pdu_type
 				memset(words, 0, sizeof(words));
-				memcpy(words, nachalo, 2); pdu_type = hextobin(words[0], words[1]);//pdu_type
+				memcpy(words, nachalo, 2);
+				pdu_type = hextobin(words[0], words[1]);//pdu_type
 				if (pdu_type & 0x40) {
 					with_udh = 1;
 					memset(udhi_str, 0, sizeof(udhi_str));
@@ -1990,11 +2007,11 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 			}
 
 			if (len_sca > 0) sprintf(stx, "CMGR/CMT_LEN=%s|%d, got_len=%d, SCA[%d]=%s, PDU_TYPE=0x%02X, ",
-						                   words, j, k, len_sca, sca_str, pdu_type);
-			sprintf(stx, "CMGR/CMT_LEN=%s|%d, got_len=%d, PDU_TYPE=0x%02X", words, j, k, pdu_type);
-			if (len_sca > 0) sprintf(stx+strlen(stx), ", SCA[%d]=%s, ", len_sca, sca_str);
-			if (with_udh) strcat(stx,"With_UDHI");
-					 else strcat(stx,"Without_UDHI");
+						                  words, j, k, len_sca, sca_str, pdu_type);
+			sprintf(stx, "CMGR/CMT_LEN=%s|%d, got_len=%d, PDU_TYPE=0x%02X,", words, j, k, pdu_type);
+			if (len_sca > 0) sprintf(stx+strlen(stx), ", SCA[%d]=%s,", len_sca, sca_str);
+			if (with_udh) strcat(stx," With_UDHI");
+					 else strcat(stx," Without_UDHI");
 			//sprintf(stx+strlen(stx),"\r\nPDU:\r\n%s\r\n", uk_start);
 			Report(false, "%s\r\n", stx);
 
@@ -2015,7 +2032,7 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 			len_num_a = a;//длинна номера A !!!!!!!!!!!!!
 			ps1 += 4;//указатель на начало номера A - 0x83
 			memset(words1, 0, sizeof(words1));
-			memcpy(words1, ps1, a); //aa=a;//запомнить длинну номара А !!!!!!!!!!!!!
+			memcpy(words1, ps1, a); //aa=a;//запомнить длинну номара А !!!
 			if (b != 5) {//надо переставить местами цифры номера
 				j = 0;
 				while (j < a) {
@@ -2032,37 +2049,46 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 					words2[i] = hextobin(words1[j], words1[j + 1]);
 					i++; j += 2;
 				}
-				//-------------------------------- decoding num_a from GSM-7bit to KOI8-R -----------
-				shift = 1; prev = 0;
+				//-------------- decoding num_a from GSM-7bit to KOI8-R -----------
 				memset(words1, 0, sizeof(words1));
-				tt_n = tt1_n = 0; dl_ind = 0;
-				dl = i; stop_ = 1;
-				while (stop_) {
+				tt_n = tt1_n = 0;
+				dl_ind = prev = 0;
+				dl = i;
+				shift = 1;
+				while (1) {
 					a_n = words2[tt_n++];
 					b_n = a_n;
 					a_n <<= (uint8_t)(shift - 1);
 					a_n = (a_n | prev) & 0x7f;
-					words1[tt1_n++] = a_n; dl_ind++; prev = (b_n >> (8 - shift));
-					if (shift != 7) shift++;
-							   else { words1[tt1_n++] = prev; dl_ind++; shift = 1; prev = 0; }
-					if (dl_ind > dl) stop_ = 0;
+					words1[tt1_n++] = a_n;
+					dl_ind++;
+					prev = (b_n >> (8 - shift));
+					if (shift != 7) {
+						shift++;
+					} else {
+						words1[tt1_n++] = prev;
+						dl_ind++;
+						shift = 1;
+						prev = 0;
+					}
+					if (dl_ind > dl) break;
 				}
 				//------------------------------------------------------------------------------------
 				new_a = strlen(words1);
 				a >>= 1;
 			}
 
-			tt1 = 0;
-			end_ind = tt1;//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-			if (fromik) memset(fromik, 0, 32);//макс-ая длинна номера А = 31
-			if (b == 1) buffer_temp[tt1++] = '+';//type_of_num_A = intern....
+			end_ind = tt1 = 0;
+			if (fromik) memset(fromik, 0, 32);    //макс-ая длинна номера А = 31
+			if (b == 1) buffer_temp[tt1++] = '+'; //type_of_num_A = intern....
 			ps_o = (char *)&buffer_temp[tt1];
 			if (new_a > 0) {
-				memcpy(ps_o, words1, new_a);	tt1 += new_a;
+				memcpy(ps_o, words1, new_a);
+				tt1 += new_a;
 				buffer_temp[tt1++] = 0x20;
 			}
-			memcpy(words, ps1 + len_num_a, 2);	//p_id=myhextobin(words[0], words[1]);
-			pss = ps1 + len_num_a + 2;//указатель на DCS
+			memcpy(words, ps1 + len_num_a, 2);	  //p_id=myhextobin(words[0], words[1]);
+			pss = ps1 + len_num_a + 2;            //указатель на DCS
 
 			memcpy(words, pss, 2);
 			dcs = hextobin(words[0], words[1]);
@@ -2075,9 +2101,11 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 				case 2: pdu = 1; break;
 			}
 			if (c > 2) c = 3;
-			ind_tp = c;//индекс типа кодировки, в которой получено сообщение bit3 bit2 в dcs
-			//d = dcs & 0x20;//признак компрессии, bit5 в dcs
-			if ((dcs & 0x20)) pack = 1; else pack = 0;
+			ind_tp = c;       //индекс типа кодировки, в которой получено сообщение bit3 bit2 в dcs
+			if ((dcs & 0x20)) //dcs & 0x20 - признак компрессии, bit5 в dcs
+				pack = 1;
+			else
+				pack = 0;
 
 			cnpl = type_num_a << 4;
 			if (dcs_npl) {
@@ -2087,11 +2115,10 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 
 			k = strlen(words1);
 			if (words1[k-1] == ' ') words1[k - 1] = '\0';
-//			Report(false, "Called_number : %s\r\n", words1);
 			if (fromik) {
 				k = strlen(words1);
 				if (k > lenFrom - 1) k = lenFrom - 1;
-				memcpy(fromik, words1, k);//макс-ая длинна номера А = 31
+				memcpy(fromik, words1, k); //макс-ая длинна номера А = 31
 			}
 
 			sprintf(stx, "DCS=0x%02X, ENC[%d]=%s", dcs, ind_tp, tp[ind_tp]);
@@ -2099,13 +2126,13 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 													type_num_a, type_name_a[type_num_a], new_a, words1);
 			if (pack) sprintf(stx+strlen(stx),", PACK=%d", pack);
 			//
+			//---------------------------------------------------
 			//
-			//
-			pss += 2;//указатель на начало области date/time
+			pss += 2; //указатель на начало области date/time
 			uint8_t byte = 18;
 			if (tp_vpf != 2) {
 				memset(words1, 0, sizeof(words1));
-				memcpy(words1, pss, 14);// 14 символов для date/time
+				memcpy(words1, pss, 14); //14 символов для date/time
 				j = 0;
 				while (j < 14) {
 					c = words1[j];
@@ -2138,48 +2165,44 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 				pss += 2;
 				byte = 6;
 			}
-			tt = (ps1 - ps0) + len_num_a + byte;//указатель на UDL - user data len
-			//buffer_temp[tt1++] = 0x0d;		buffer_temp[tt1++]=0x0a;
-			memcpy(&buffer_temp[tt1], eolin, 2); tt1 += 2;
-			end_ind = tt1;//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
+			tt = (ps1 - ps0) + len_num_a + byte; //указатель на UDL - user data len
+			memcpy(&buffer_temp[tt1], eolin, strlen(eolin)); tt1 += strlen(eolin);
+			end_ind = tt1;
+			//
 			ps3 = (char *)&buffer_txt[tt];
 			memset(words, 0, sizeof(words));
 			memcpy(words, ps3, 2);
-			dl = hextobin(words[0], words[1]);//длинна тела сообщения
-			dl &= 0xff;
+			dl = hextobin(words[0], words[1]); //длинна тела сообщения
 			user_data_l = user_data_len = dl;
-
 			sprintf(stx+strlen(stx),", UDL=%d[%s]\r\n", user_data_len, words);
 			Report(false, stx);
 
-			tt += 2;//индекс на начало текста сообщения / или на начало udhi
+			tt += 2; //индекс на начало текста сообщения или на начало udhi
 		}//if (its_ok)
-
+		//
+		//----------------------------------------------------------------
+		//
 		dl_ind = 0;
-		if (pdu == 1) {//тело сообщения в UCS2
-			if (with_udh) {
+		if (pdu == 1) { //тело сообщения в UCS2
+
+			if (with_udh) { //Это часть сообщения
 				ps1 = (char *)&buffer_txt[tt];
 				memset(words, 0, sizeof(words));
 				memcpy(words, ps1, 2);
 				udhi_len = hextobin(words[0], words[1]);
 				if (udhi_len <= 32) {
 					memcpy(udhi_str, ps1 + 2, udhi_len << 1);
-					tt += ((udhi_len + 1) << 1);//NEW BODY POINTER
+					tt += ((udhi_len + 1) << 1); //NEW BODY POINTER (index)
 					dl -= udhi_len + 1;
 					user_data_len = dl;
 				}
 			}
 
-//sprintf(stx,"UCS2:\n");
-//print_msg_sms(stx,1);
-			stop_ = 1;
-			while (stop_) {
+			while (1) {
 				ps1 = (char *)&buffer_txt[tt];
 				memset(words, 0, sizeof(words));
 				memcpy(words, ps1, 4);
 				yes = 0;
-//sprintf(stx,"[%s] - ",words);
 				for (j = 0; j < cod_PDU_len; j++) {
 					sprintf(chcs, "%04X", cod_PDU[j]);
 					if (!strncmp(words, chcs, 4)) {
@@ -2190,14 +2213,10 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 				}
 				if (yes == 1) buffer_temp[tt1++] = alphabet[it];
 					     else buffer_temp[tt1++] = '.';
-//sprintf(stx+strlen(stx),"[0x%02x|%c] ",buffer_temp[tt1], buffer_temp[tt1]);
 				tt += 4;   dl_ind++;
-				if (((tt + 4) > len) || (dl_ind > dl)) stop_ = 0;
-//sprintf(stx+strlen(stx),"len=%d dl=%d in_idx=%d out_idx=%d dl_ind=%d stop=%d\n",len,dl,tt,tt1,dl_ind,stop_);
-//print_msg_sms(stx,0);
+				if (((tt + 4) > len) || (dl_ind > dl)) break;
 			}
-		} else {//if (pdu==1)
-			stop_ = 1;
+		} else {//if (pdu == 1)
 			switch (ind_tp) {
 				case 0 ://7 bit encoding
 					k = 0;
@@ -2216,17 +2235,14 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 							k = dl * 7;
 							dl = k >> 3;
 							if (k % 8) dl++;
-							dl &= 0xff;
 							user_data_len = dl;
-//memset(stx,0,512); sprintf(stx+strlen(stx),"udhi_str[%d]:[%s]\n",udhi_len,udhi_str); print_msg_sms(stx,1);
 						}
 					} else {
-						//k = dl * 7; //dl = k >> 3; //if (k%8) dl++; //dl&=0xff; //user_data_len=dl;
 						flg = 0;
 					}
-//memset(stx,0,512); sprintf(stx+strlen(stx),"7bit_to_text: In[%d]=%s\n",dl,(unsigned char *)&buffer_txt[tt]); print_msg_sms(stx,0);
+
 					dl_ind = gsm7bit_to_text(dl, &buffer_txt[tt], &buffer_temp[end_ind], flg, user_data_l, udhi_len);
-//memset(stx,0,512); sprintf(stx+strlen(stx),"7bit_to_text: Out[%d]=%s\n",dl_ind,(char *)&buffer_temp[tt1]); print_msg_sms(stx,0);
+
 					tt1 += dl_ind;
 				break;
 				case 1://8 bit encoding
@@ -2241,13 +2257,14 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 							user_data_len = dl;
 						}
 					}
-					while (stop_) {
+
+					while (1) {
 						ps1 = (char *)&buffer_txt[tt];
 						memcpy(words, ps1, 2);
 						buffer_temp[tt1++] = hextobin(words[0], words[1]);
 						tt += 2;
 						dl_ind++;
-						if ((tt >= len) || (dl_ind >= dl)) stop_ = 0;
+						if ((tt >= len) || (dl_ind >= dl)) break;
 					}
 				break;
 			}//switch (ind_tp)
@@ -2257,27 +2274,28 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 
 		if (with_udh) {
 			if (udhi_len >= 5) {
-				udhi_4[0] = 1;//tp
+				udhi_4[0] = 1; //tp
 				a = hextobin(udhi_str[2], udhi_str[3]);
 				b = (udhi_len << 1);
-				if (a == 4) {//2 байта на номер смс
+				if (a == 4) { //2 байта на номер смс
 					b -= 8;
-					udhi_4[1] = hextobin(udhi_str[b], udhi_str[b + 1]);//num_1
+					udhi_4[1] = hextobin(udhi_str[b], udhi_str[b + 1]); //num_1
 					b += 2;
-				} else {//1 байт на номер смс
-					udhi_4[1] = 0;//num_1
+				} else { //1 байт на номер смс
+					udhi_4[1] = 0; //num_1
 					b -= 6;
 				}
-				udhi_4[2] = hextobin(udhi_str[b],     udhi_str[b + 1]);//num_2
-				udhi_4[3] = hextobin(udhi_str[b + 2], udhi_str[b + 3]);//total
-				udhi_4[4] = hextobin(udhi_str[b + 4], udhi_str[b + 5]);//part
+				udhi_4[2] = hextobin(udhi_str[b],     udhi_str[b + 1]); //num_2
+				udhi_4[3] = hextobin(udhi_str[b + 2], udhi_str[b + 3]); //total
+				udhi_4[4] = hextobin(udhi_str[b + 4], udhi_str[b + 5]); //part
 			}
 		}
 		if (uk_udhi) memcpy(uk_udhi, udhi_4, 5);
 
 		if (with_udh) {
-			if (TSINPART) end_ind = 0;
-			else {
+			if (TSINPART) {
+				end_ind = 0;
+			} else {
 				if (udhi_4[4] < 2) end_ind = 0;
 			}
 		} else end_ind = 0;
@@ -2285,11 +2303,7 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 		if (end_ind > SMS_BUF_LEN - 1) end_ind = 0;
 
 		memcpy(buffer_txt, &buffer_temp[end_ind], SMS_BUF_LEN - 1 - end_ind);
-/*
-		if (with_udh) sprintf(stx,"UDHI(%d): [%s]\nTEXT[%d]:\r\n", udhi_len, udhi_str, dl_ind);
-				else  sprintf(stx,"TEXT[%d]:\r\n", dl_ind);
-		Report(false, stx);
-*/
+
 		if (with_udh) Report(false,"UDHI(%d): [%s]\r\n", udhi_len, udhi_str);
 
 		ret = dl_ind;
@@ -2298,6 +2312,44 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 
  	return ret;
 }
+//-----------------------------------------------------------------------------------------
+int ucs2_to_text(char *buf_in, uint8_t *buf_out)
+{
+	if (!buf_in) return 0;
+	int len = strlen(buf_in);	if (!len) return 0;
+
+	int dl_ind = 0, yes, it = 0, j, tt = 0, tt1 = 0;
+	char words[5], tmp[5];
+
+	Report(false, "[%s] buf_in(%d):'%.*s'\r\n", __func__, len, len, buf_in);
+
+    while (1) {
+    	memset(words, 0, sizeof(words));
+    	memcpy(words, &buf_in[tt], 4);
+    	yes = 0;
+    	for (j = 0; j < cod_PDU_len; j++) {
+    		sprintf(tmp,"%04X", cod_PDU[j]);
+    		if (!strncmp(words, tmp, 4)) {
+    			yes = 1;
+    			it = j;
+    			break;
+    		}
+    	}
+    	if (yes) {
+    		buf_out[tt1++] = alphabet[it];
+    	} else {
+    		buf_out[tt1++] = '.';
+    	}
+
+    	tt += 4;
+    	dl_ind++;
+    	if (tt >= len) break;
+    }
+
+    return dl_ind;
+}
+//-----------------------------------------------------------------------------------------
+
 //-----------------------------------------------------------------------------------------
 
 #endif
@@ -2321,7 +2373,6 @@ void StartDefTask(void *argument)
 
 	osDelay(1000);
 
-	//GpsParamInit();
 	rmc5 = 1;
 	initQ(&q_gps);
 
@@ -2339,7 +2390,7 @@ void StartDefTask(void *argument)
   	while (LoopAll)   {
 
   		//-------------------------------------------------------------------------
-  		//						get from gps_queue
+  		//						get data from gps_queue
   		//
   		if (!flags.auto_cmd) {
   			if (getQ(msgNMEA, &q_gps) >= 0) {
@@ -2356,49 +2407,49 @@ void StartDefTask(void *argument)
   		osDelay(10);
 
   		//--------------------------------------------------------------------------
-  		if (mailQueueHandle) {
-  			if (osMessageQueueGet(mailQueueHandle, (void *)&levt, NULL, 50) == osOK) {
-  				memcpy((uint8_t *)&iData.sens, (uint8_t *)&levt, sizeof(result_t));
-  				new |= 1;
-                show = flags.i2c_log_show;
-  				row = 6;
-  				sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", levt.pres, levt.temp);
-  				switch (levt.chip) {
-  					case BMP280_SENSOR :
-  						sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", levt.pres, levt.temp);
-  						if (show) sprintf(DefBuf, "BMP280: mmHg=%.2f, DegC=%.2f; BH1750: Lx=%.2f\r\n",
+  		//						get data from sensors_queue
+  		//
+  		if (osMessageQueueGet(mailQueueHandle, (void *)&levt, NULL, 50) == osOK) {
+  			memcpy((uint8_t *)&iData.sens, (uint8_t *)&levt, sizeof(result_t));
+  			new |= 1;
+  			row = 6;
+  			show = flags.i2c_log_show;
+  			sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", levt.pres, levt.temp);
+  			switch (levt.chip) {
+  				case BMP280_SENSOR :
+  					sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", levt.pres, levt.temp);
+  					if (show) sprintf(DefBuf, "BMP280: mmHg=%.2f, DegC=%.2f; BH1750: Lx=%.2f\r\n",
   										levt.pres, levt.temp, levt.lux);
-  				  	break;
-  					case BME280_SENSOR :
-  						row = 5;
-  						sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f\nHumi: %.2f %%rH", levt.pres, levt.temp, levt.humi);
-  				  		if (show) sprintf(DefBuf, "BME280: mmHg=%.2f, DegC=%.2f %%rH=%.2f; BH1750: Lx=%.2f\r\n",
+  				break;
+  				case BME280_SENSOR :
+  					row = 5;
+  					sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f\nHumi: %.2f %%rH", levt.pres, levt.temp, levt.humi);
+  					if (show) sprintf(DefBuf, "BME280: mmHg=%.2f, DegC=%.2f %%rH=%.2f; BH1750: Lx=%.2f\r\n",
   				  						levt.pres, levt.temp, levt.humi, levt.lux);
-  				  	break;
-  					default : {
+  				break;
+  				default : {
   						sprintf(toScreen, "\n\n");
   						if (show) sprintf(DefBuf, "Unknown chip; BH1750: Lx=%.2f\r\n", levt.lux);
-  					}
   				}
-  				//
+  			}
+  			//
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-  				sprintf(toScreen+strlen(toScreen), "\nLux  : %.2f", levt.lux);
+  			sprintf(toScreen+strlen(toScreen), "\nLux  : %.2f", levt.lux);
 	#ifdef SET_OLED_I2C
-  				if (!i2cError) i2c_ssd1306_text_xy(toScreen, 1, row);//send string to screen
+  			if (!i2cError) i2c_ssd1306_text_xy(toScreen, 1, row);
 	#endif
 	#ifdef SET_OLED_SPI
-  				spi_ssd1306_text_xy(toScreen, 1, row);//send string to screen
+  			spi_ssd1306_text_xy(toScreen, 1, row);
 	#endif
 #endif
-  				if (show) Report(true, DefBuf);
-  			}
-  		}//mailqueuehandle
+  			if (show) Report(true, DefBuf);
+  		}
 
   		//-------------------------------------------------------------------------
   		if (flags.restart) {
   			flags.restart = 0;
   			if (gprs_stat.connect) flags.disconnect = 1;
-  			Report(true, "Restart all !\r\n");
+  			Report(true, "Restart ARM !\r\n");
   			osDelay(1000);
   			NVIC_SystemReset();
   			break;
@@ -2411,10 +2462,10 @@ void StartDefTask(void *argument)
   			Report(true, "%s!\r\n", toScreen);
   			toDisplay((const char *)toScreen, 0, 5, false);
   			osDelay(1500);
-  			gsmONOFF(1850);
+  			gsmONOFF(ModuleOFF);
   			uint8_t ct = 6;
   			while (getVIO()) {
-  				gsmONOFF(1850);
+  				gsmONOFF(ModuleOFF);
   				osDelay(1000);
   				ct--;
   				if (!ct) break;
@@ -2425,7 +2476,6 @@ void StartDefTask(void *argument)
 
   		//-------------------------------------------------------------------------
   		if (new == 3) {
-//  			HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//On led
   			new = 0;
   			osMessageQueuePut(mqData, (void *)&iData, 0, 20);
   		}
@@ -2450,13 +2500,10 @@ void StartSensTask(void *argument)
 {
   /* USER CODE BEGIN StartSensTask */
 
-	uint8_t data_rdx[DATA_LENGTH] = {0};
-	uint8_t reg_id   = 0;
-	uint8_t reg_stat = 0;
-	uint8_t reg_mode = 0;
-	uint8_t reg_conf = 0;
-	size_t d_size    = 1;
+	size_t d_size = 1;
 	int32_t temp, pres, humi = 0;
+	uint8_t data_rdx[DATA_LENGTH] = {0};
+	uint8_t reg_id = 0, reg_stat = 0, reg_mode = 0, reg_conf = 0;
 
 	result_t sens;
 
@@ -2511,7 +2558,7 @@ void StartSensTask(void *argument)
 					if (reg_id == BME280_SENSOR) humi = (data_rdx[6] << 8) | data_rdx[7];
 					bmp280_CalcAll(&sens, reg_id, temp, pres, humi);
 					//
-					if (mailQueueHandle) osMessageQueuePut(mailQueueHandle, (void *)&sens, 0, 10);
+					osMessageQueuePut(mailQueueHandle, (void *)&sens, 0, 10);
 					//
 				}
 			}
@@ -2542,19 +2589,21 @@ void StartAtTask(void *argument)
 
 	char *uki = msgCMD;
 	const char *buff = NULL;
-	uint8_t counter = 0;
-	uint32_t wait_ack = 0;
+	uint8_t counter = 0, cnt = 0, max_repeat = 8;
+	uint32_t wait_ack = 0, wait_ack_cli = 0;
 	uint64_t new_cmds = 0, min_ms = 1, max_ms = 6, tms;
-	flags.imei_flag = flags.inf = 0;
-	flags.cmt = 0;
-	char *uk = NULL;
-	uint8_t cnt = 0, max_repeat = 8;
+	char *uk = NULL, *uks = NULL, *uke = NULL;
 	bool repeat = false;
 
-	gprs_stat.connect = gprs_stat.init = 0;
+	flags.imei_flag = 0;
+	flags.inf       = 0;
+	flags.cmt       = 0;
+
+	gprs_stat.connect     = gprs_stat.init = 0;
 	gprs_stat.try_connect = gprs_stat.prompt = 0;
-	gprs_stat.try_send = gprs_stat.cgatt_on = 0;
-	gprs_stat.send_ok = gprs_stat.next_send = 1;
+	gprs_stat.try_send    = gprs_stat.cgatt_on = 0;
+	gprs_stat.send_ok     = gprs_stat.next_send = 1;
+
 	bool yes = false;
 	msgGPRS[0] = 0;
 	char cmd[80];
@@ -2576,16 +2625,13 @@ void StartAtTask(void *argument)
 	toDisplay((const char *)toScr, 0, 2, false);
 #endif
 
-	uint8_t rx_faza = 0;
-	uint8_t faza = 0;
-	uint8_t ctn = 5;
+	uint8_t ctn = 5, faza = 0, rx_faza = 0;
+	uint32_t tmps = ModuleON;
+
 	bool vios = getVIO();
-	uint32_t tmps = 1150;
 	if (!vios) {
 		gsmONOFF(tmps);
-		//evt_gsm = 1;
 	} else {
-		//wait_ack = get_tmr(2);
 		flags.auto_cmd = 1;
 		faza = 4;
 		counter = 0;
@@ -2596,22 +2642,29 @@ void StartAtTask(void *argument)
 	wait_ack = get_tmr(2);
 
 	/* Infinite loop */
+
 	while (LoopAll) {
 
 		//-----------------------------------------------------------
 		if (evt_gsm) {
-			if (evt_gsm == 2) tmps = 1750; else tmps = 1150;
+			if (evt_gsm == 2)
+				tmps = ModuleOFF;//OFF sim868
+			else
+				tmps = ModuleON;//ON sim868
 			vios = getVIO();
 			while ((vios == getVIO()) && ctn--) {
-				gsmONOFF(tmps);//module OFF
+				gsmONOFF(tmps);//   ```|_____|``` - make pulse duration tmps
 				osDelay(1500);
 			};
-			faza = 0;
+
 			AtParamInit(false);
-			gprs_stat.init = gprs_stat.connect = 0;
-			flags.imei_flag = flags.auto_cmd = flags.inf = 0;
+			gprs_stat.init    = 0;
+			gprs_stat.connect = 0;
+			flags.imei_flag   = 0;
+			flags.auto_cmd = flags.inf = 0;
 			ctn = 5;
 			evt_gsm = 0;
+			faza = 0;
 		}
 		//-----------------------------------------------------------
 
@@ -2637,7 +2690,7 @@ void StartAtTask(void *argument)
 						}
 					} else {
 						if (cmdsDone && !flags.auto_cmd) {
-							if (getQ(msgCMD, &q_cmd) >= 0) {//send at command to sim868
+							if (getQ(msgCMD, &q_cmd) >= 0) {//get at_command from queue for sending to sim868
 								buff = &msgCMD[0];
 								faza = 1;
 							} else faza = 3;
@@ -2645,7 +2698,7 @@ void StartAtTask(void *argument)
 					}
 				}
 			break;
-			case 1:
+			case 1://send at_command to sim868
 				HAL_UART_Transmit_DMA(portAT, (uint8_t *)buff, strlen(buff));
 				while (HAL_UART_GetState(portAT) != HAL_UART_STATE_READY) {
 					if (HAL_UART_GetState(portAT) == HAL_UART_STATE_BUSY_RX) break;
@@ -2656,14 +2709,15 @@ void StartAtTask(void *argument)
 								(strstr(buff, "AT+CIICR")) || (strstr(buff, "AT+CGACT=")) ) {
 					wait_ack = get_tmr(45);//WAIT ACK 45 SEC
 				} else {
-					//if (!cmdsInd)
-						wait_ack = get_tmr(5);
-							 //else wait_ack = get_tmr(15);
+					if (!cmdsInd) wait_ack = get_tmr(5);
+							 else wait_ack = get_tmr(15);
 				}
 				if (strstr(buff, "AT+GSN")) flags.imei_flag = 1;
+				else
 				if (strstr(buff, "AT+CIFSR")) flags.local_ip_flag = 1;
-				if (cmdsInd == -1) wait_ack = 0;
+				else
 				if (strstr(buff, "AT+CIPSEND=")) gprs_stat.send_ok = 0;
+				if (cmdsInd == -1) wait_ack = 0;
 				faza = 2;
 			break;
 			case 2:
@@ -2674,8 +2728,11 @@ void StartAtTask(void *argument)
 						if (getVIO()) {
 							if (cmdsInd >= 0) {
 								cmdsInd++;
-								if (cmdsInd >= cmdsMax) cmdsInd = -1;
-												   else new_cmds = get_hstmr(min_ms);//250 ms
+								if (cmdsInd >= cmdsMax) {
+									cmdsInd = -1;
+								} else {
+									new_cmds = get_hstmr(min_ms);//250 ms
+								}
 							} else evt_gsm = 2;//OFF
 						} else evt_gsm = 1;//ON
 					}
@@ -2693,7 +2750,6 @@ void StartAtTask(void *argument)
 							sprintf(cmd, "AT+CIPSTART=\"TCP\",\"%s\",%u\r\n", srv_adr, srv_port);
 							buff = cmd;
 							gprs_stat.try_connect = 1;
-							//Report(true, "+++ Try_connect +++\r\n");
 						}
 					}
 				}
@@ -2704,7 +2760,6 @@ void StartAtTask(void *argument)
 							yes = true;
 							buff = gprsDISCONNECT;//"AT+CIPCLOSE\r\n"
 							gprs_stat.try_disconnect = 1;
-							//Report(true, "--- Try_disconnect ---\r\n");
 						}
 					}
 				}
@@ -2728,7 +2783,6 @@ void StartAtTask(void *argument)
 							}
 						}
 					}
-//					HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//Off led
 				}
 				if (gprs_stat.prompt && gprs_stat.connect) {
 					yes = true;
@@ -2764,23 +2818,21 @@ void StartAtTask(void *argument)
 
 		}//switch (faza)
 
-		/*if (faza != last_faza) {
-			if (faza != 3) Report(true, "faza = %u last_faza = %u\r\n", faza, last_faza);
-			last_faza = faza;
-		}*/
-
-
 		//-----------------------------------------------------------------------------------
 		//							rx_data_from_module
 		//
 		switch (rx_faza) {
 			case 0:
 				if (getQ(msgAT, &q_at) < 0) break;
+
 				if (strstr(msgAT, "NORMAL POWER DOWN")) {
 					gprs_stat.init = gprs_stat.connect = 0;
 					wait_ack = get_tmr(4);
 					faza = 4;
 				} else if (strlen(msgAT)) {
+					//
+					if (wait_ack_cli) wait_ack_cli = 0;
+					//
 					ackYes = 1;
 					if (flags.local_ip_flag) {
 						flags.local_ip_flag = 0;
@@ -2838,6 +2890,7 @@ void StartAtTask(void *argument)
 						if (strstr(msgAT, "SEND OK")) {
 							gprs_stat.send_ok = 1;
 							gprs_stat.next_send = 1;
+							wait_ack_cli = get_tmr(wait_ack_cli_sec);
 						} else if (gprs_stat.connect) {
 							if (strstr(msgAT, "CLOSE")) {
 								gprs_stat.connect = 0;
@@ -2846,13 +2899,10 @@ void StartAtTask(void *argument)
 								Report(true, "--- DISCONNECTED ---\r\n");
 								if (gprs_stat.try_disconnect) gprs_stat.try_disconnect = 0;
 								HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
+								wait_ack_cli = 0;
 							} else if (strstr(msgAT, "ERROR")) {
-								//gprs_stat.connect = 0;
-								//con_dis = false;
-								//gprs_stat.send_ok = gprs_stat.next_send = 1;
-								//Report(true, "--- TRY DISCONNECT ---\r\n");
 								gprs_stat.try_disconnect = 1;
-								//HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
+								wait_ack_cli = 0;
 							}
 						}
 						if (strchr(msgAT, '>')) gprs_stat.prompt = 1; else gprs_stat.prompt = 0;
@@ -2867,7 +2917,6 @@ void StartAtTask(void *argument)
 								HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_SET);
 							}
 						}
-
 
 						wait_ack = 0;
 						cmdsDone = true;
@@ -2921,11 +2970,29 @@ void StartAtTask(void *argument)
 							flags.cmt = 0;
 						}
 					}
+					//
+					if ((uks = strstr(msgAT, "+CUSD: 0, \"")) != NULL) {
+						Report(false, msgAT);
+						uks += 11;//uk to begin ucs2 string
+						uke = strstr(uks, "\", 72");
+						if (uke) {
+							memset(msgGPRS, 0, sizeof(msgGPRS));
+							memcpy(msgGPRS, uks, uke - uks);
+							memset(SMS_text, 0, sizeof(SMS_text));
+							if (ucs2_to_text(msgGPRS, (uint8_t *)SMS_text)) {
+								Report(false, "%s\r\n", SMS_text);
+							}
+						}
+						memset(msgAT, 0, sizeof(msgAT));
+					}
+					//
 #endif
 					//
 				}
 
+				//---------------------------------------------------------------------
 				if (strlen(msgAT)) Report(false, msgAT);
+				//---------------------------------------------------------------------
 
 				if (counter >= 5) {
 					counter = 0;
@@ -2935,8 +3002,15 @@ void StartAtTask(void *argument)
 					flags.auto_cmd = 1;
 				}
 			break;
-		}
+		}//switch (rx_faza)
 
+		if (wait_ack_cli) {//check timeout for wait ack from tcpServer
+			if (check_tmr(wait_ack_cli)) {
+				wait_ack_cli = 0;
+				flags.disconnect = 1;
+				con_dis = false;
+			}
+		}
 		//---------------------------------------------------------------------------
 
 		if (flags.srv) {
@@ -2982,8 +3056,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   else
   if (htim->Instance == TIM2) {//interrupt every 250 ms
 	  if ((get_hsCounter() & 3) == 3) {//seconda
+		  //------------------------------------------------------------------------------------------
 		  inc_secCounter();
 		  HAL_GPIO_TogglePin(GPIOD, LED_GREEN_Pin);
+
 		  if (evt_clear) {
 			  evt_clear = false;
 #ifdef SET_OLED_I2C
@@ -2993,6 +3069,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			  spi_ssd1306_clear_line(1);
 #endif
 		  }
+
 		  char scrBuf[32];
 #ifndef SET_RTC_TMR
 		  if (epochSet) inc_extDate();
@@ -3030,7 +3107,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		  sprintf(scrBuf, "%c %s", pic, conStatus[gprs_stat.connect]);
 		  toDisplay((const char *)scrBuf, 0, 3, true);
 #endif
-		  //----------------------------------------------------------------------------------
+		  //------------------------------------------------------------------------------------------
 		  rmc5++;
 		  if (flags.msg_begin) {
 			  flags.msg_begin = 0;
@@ -3042,7 +3119,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 				  flags.inf = 1;
 			  }
 		  }
-		  //----------------------------------------------------------------------------------
+		  //------------------------------------------------------------------------------------------
 	  }
 
 	  inc_hsCounter();
