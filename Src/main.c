@@ -84,7 +84,8 @@
 //const char *ver = "ver 2.9rc1";//15.07.2019 - major changes : add VIO -> GSM_STATUS pin (PA2) - pin42 module sim868
 //const char *ver = "ver 3.0rc1";//16.07.2019 - major changes : add sms support - step 1 ('+CMT:' mode)
 //const char *ver = "ver 3.0rc2";//17.07.2019 - minor changes : '+CMT:' continue - support Data coding: GSM7bit
-const char *ver = "ver 3.0rc3";//20.07.2019 - minor changes : sms mode edit continue
+//const char *ver = "ver 3.0rc3";//20.07.2019 - minor changes : sms mode edit continue
+const char *ver = "ver 3.1rc1";//21.07.2019 - minor changes : fixed bug in callback function (at_commands port of sim868)
 
 
 
@@ -170,7 +171,7 @@ static bool setDate = false;
 static char DefBuf[MAX_UART_BUF];
 
 static char RxBuf[MAX_UART_BUF];
-volatile uint8_t rx_uk;
+volatile uint16_t rx_uk;
 uint8_t lRxByte;
 
 volatile uint8_t rmc5 = 8;//6;
@@ -182,7 +183,7 @@ const char *nameEW[] = {"East" , "West"};
 static bool onGNS = false;
 
 static char AtRxBuf[MAX_UART_BUF];
-volatile uint8_t at_rx_uk;
+volatile uint16_t at_rx_uk;
 uint8_t aRxByte;
 uint8_t adone = 0;
 char msgAT[MAX_UART_BUF] = {0};
@@ -364,7 +365,6 @@ void StartAtTask(void *argument);
 void Report(bool addTime, const char *fmt, ...);
 void errLedOn(const char *from);
 void gsmONOFF(const uint32_t tw);
-void ClearRxBuf();
 void initQ(s_msg_t *q);
 void clearQ(s_msg_t *q);
 int8_t putQ(char *adr, s_msg_t *q);
@@ -414,9 +414,6 @@ int main(void)
   MX_SPI3_Init();
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
-
-
-  ClearRxBuf();
 
   portBMP = &hi2c1;//BMP280
 #ifdef SET_OLED_I2C
@@ -497,7 +494,8 @@ int main(void)
   	  mqData = osMessageQueueNew(MAX_QMSG, sizeof(s_data_t), &mqData_attributes);
 
   	  HAL_Delay(1500);
-  	  ClearRxBuf();
+  	  rx_uk = 0;
+  	  memset(RxBuf, 0, MAX_UART_BUF);
   	  HAL_UART_Receive_IT(portLOG, (uint8_t *)&lRxByte, 1);//LOG
 
   /* USER CODE END RTOS_QUEUES */
@@ -998,13 +996,6 @@ uint32_t tik = twait / 10, cnt = 10;
 	ackYes = 0;
 }
 //-----------------------------------------------------------------------------
-void ClearRxBuf()
-{
-	adone = 0;
-	rx_uk = 0;
-    memset(RxBuf, 0, MAX_UART_BUF);
-}
-//-----------------------------------------------------------------------------
 int sec_to_str_time(uint32_t sec, char *stx)
 {
 	uint32_t day = sec / (60 * 60 * 24);
@@ -1328,15 +1319,15 @@ int i31;
 //------------------------------------------------------------------------------------------
 void getAT()
 {
+//  0x0d 0x0a ....... 0x0d 0x0a
 	if ((aRxByte > 0x0d) && (aRxByte < 0x80)) {
 		if (aRxByte >= 0x20) adone = 1;
 		if (adone) AtRxBuf[at_rx_uk++] = (char)aRxByte;
 	}
 
-	if (at_rx_uk > 0) {
-		if ( ( (aRxByte == 0x0a) || (aRxByte == 0x3e) ) && adone) {// '\n' || '>'
-			if (aRxByte != 0x3e) strcat(AtRxBuf, "\r\n");
-
+	if (adone) {
+		if ( (aRxByte == 0x0a) || (aRxByte == 0x3e) ) {// '\n' || '>'
+			if (aRxByte != 0x3e) strcat(AtRxBuf, "\r\n");//0x0D 0x0A
 			if (LoopAll) {//-----------------------------------------------------
 				int len = strlen(AtRxBuf);
 				char *buff = (char *)calloc(1, len + 1);
@@ -1352,7 +1343,8 @@ void getAT()
 				}
 			}//------------------------------------------------------------------
 
-			at_rx_uk = adone = 0;
+			at_rx_uk = 0;
+			adone = 0;
 			memset(AtRxBuf, 0, MAX_UART_BUF);
 		}
 	}
@@ -1461,7 +1453,8 @@ void LogData()
 
 			}//if (priz)
 		}
-		ClearRxBuf();
+		rx_uk = 0;
+		memset(RxBuf, 0, MAX_UART_BUF);
 	}
 }
 //------------------------------------------------------------------------------------------
@@ -1880,7 +1873,7 @@ uint8_t words[4] = {0};
     return (dl_ind);
 }
 //----------------------------------------------------------------------------------
-int conv_ucs2_text(uint8_t *buffer_txt, uint8_t *uk_udhi, uint8_t *dcs_npl, char *fromik)
+int conv_ucs2_text(uint8_t *buffer_txt, char *fromik)
 {
 int ret = 0;
 int tt, tt1 = 0, tt_n, tt1_n, len, i = 0, j = 0, k = 0, shift, yes, it = 0, tzone, end_ind = 0;
@@ -1891,7 +1884,7 @@ char *ina0 = NULL;
 char *ps_sta = NULL;
 char *nachalo = NULL;
 uint16_t dcs;
-uint8_t a, a_n, b, b_n, c, cnpl, prev, dl = 0, dl_ind, new_a;
+uint8_t a, a_n, b, b_n, c, prev, dl = 0, dl_ind, new_a;
 uint8_t pdu_type = 0xff, type_num_a, len_num_a, user_data_len = 0;
 uint8_t user_data_l = 0, udhi_len = 0, len_sca = 0, tp_mti = 0, tp_vpf = 0;
 char words[5], chcs[12];
@@ -1905,7 +1898,6 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 	if (!buffer_txt) return ret;
 
     len  =  strlen((char *)buffer_txt);
-//	Report(true, "In : len=%d buf:\r\n'%s'\r\n", len, (char *)buffer_txt);
 
 	if ((len < 7) || (len > 512)) {
 		*buffer_txt = 0;
@@ -2107,12 +2099,6 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 			else
 				pack = 0;
 
-			cnpl = type_num_a << 4;
-			if (dcs_npl) {
-				*dcs_npl       = cnpl; //TON
-				*(dcs_npl + 1) = c;    //ENC
-			}
-
 			k = strlen(words1);
 			if (words1[k-1] == ' ') words1[k - 1] = '\0';
 			if (fromik) {
@@ -2290,7 +2276,6 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 				udhi_4[4] = hextobin(udhi_str[b + 4], udhi_str[b + 5]); //part
 			}
 		}
-		if (uk_udhi) memcpy(uk_udhi, udhi_4, 5);
 
 		if (with_udh) {
 			if (TSINPART) {
@@ -2304,7 +2289,7 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 
 		memcpy(buffer_txt, &buffer_temp[end_ind], SMS_BUF_LEN - 1 - end_ind);
 
-		if (with_udh) Report(false,"UDHI(%d): [%s]\r\n", udhi_len, udhi_str);
+		if (with_udh) Report(false,"UDH(%d): [%s]\r\n", udhi_len, udhi_str);
 
 		ret = dl_ind;
 
@@ -2320,8 +2305,6 @@ int ucs2_to_text(char *buf_in, uint8_t *buf_out)
 
 	int dl_ind = 0, yes, it = 0, j, tt = 0, tt1 = 0;
 	char words[5], tmp[5];
-
-	Report(false, "[%s] buf_in(%d):'%.*s'\r\n", __func__, len, len, buf_in);
 
     while (1) {
     	memset(words, 0, sizeof(words));
@@ -2348,8 +2331,6 @@ int ucs2_to_text(char *buf_in, uint8_t *buf_out)
 
     return dl_ind;
 }
-//-----------------------------------------------------------------------------------------
-
 //-----------------------------------------------------------------------------------------
 
 #endif
@@ -2450,7 +2431,7 @@ void StartDefTask(void *argument)
   			flags.restart = 0;
   			if (gprs_stat.connect) flags.disconnect = 1;
   			Report(true, "Restart ARM !\r\n");
-  			osDelay(1000);
+  			osDelay(1500);
   			NVIC_SystemReset();
   			break;
   		}
@@ -2466,7 +2447,7 @@ void StartDefTask(void *argument)
   			uint8_t ct = 6;
   			while (getVIO()) {
   				gsmONOFF(ModuleOFF);
-  				osDelay(1000);
+  				osDelay(1500);
   				ct--;
   				if (!ct) break;
   			}
@@ -2607,10 +2588,9 @@ void StartAtTask(void *argument)
 	bool yes = false;
 	msgGPRS[0] = 0;
 	char cmd[80];
-	int dl;
+	int dl, i, j;
 
 #ifdef SET_SMS
-	uint8_t abcd[5] = {0}, dcs[2] = {0};
 	char fromNum[lenFrom] = {0};
 #endif
 
@@ -2861,12 +2841,12 @@ void StartAtTask(void *argument)
 							repeat = false;
 						}
 						if (repeat) tms = max_ms;
-					} else if (strstr(msgAT, "RDY")) counter++;
+					} /*else if (strstr(msgAT, "RDY")) counter++;
 					else if (strstr(msgAT, "+CFUN:")) counter++;
-					else if (strstr(msgAT, "+CPIN: NOT INSERTED")) counter = 5;
 					else if (strstr(msgAT, "+CPIN: READY")) counter++;
-					else if (strstr(msgAT, "Call Ready")) counter++;
-					else if (strstr(msgAT, "SMS Ready")) counter = 5;
+					else if (strstr(msgAT, "Call Ready")) counter++;*/
+					else if (strstr(msgAT, "SMS Ready")) counter = 1;
+					else if (strstr(msgAT, "+CPIN: NOT INSERTED")) counter = 1;
 					else if ((uki = strstr(msgAT, "+CSQ: ")) != NULL) {//+CSQ: 15,0
 						uki += 6;
 						if ((uk = strchr(uki, ',')) != NULL) {
@@ -2885,8 +2865,11 @@ void StartAtTask(void *argument)
 					} else if ((uki = strstr(msgAT, "+CGATT: ")) != NULL) {
 						if (*(uki + 8) == '1') gprs_stat.cgatt_on = 1;
 						else gprs_stat.cgatt_on = 0;
-					} else if (strstr(msgAT, "ERROR") || strstr(msgAT, "OK") ||
-							strstr(msgAT, "CLOSE") || strchr(msgAT, '>') || strstr(msgAT, "+BTSCAN: 1")) {
+					} else if (strstr(msgAT, "ERROR") ||
+								strstr(msgAT, "OK") ||
+									strstr(msgAT, "CLOSE") ||
+										strchr(msgAT, '>') ||
+											strstr(msgAT, "+BTSCAN: 1")) {
 						if (strstr(msgAT, "SEND OK")) {
 							gprs_stat.send_ok = 1;
 							gprs_stat.next_send = 1;
@@ -2905,7 +2888,8 @@ void StartAtTask(void *argument)
 								wait_ack_cli = 0;
 							}
 						}
-						if (strchr(msgAT, '>')) gprs_stat.prompt = 1; else gprs_stat.prompt = 0;
+						if (strchr(msgAT, '>')) gprs_stat.prompt = 1;
+										   else gprs_stat.prompt = 0;
 						if (gprs_stat.try_connect) {
 							if (strstr(msgAT, "CONNECT")) {
 								gprs_stat.connect = 1;
@@ -2952,18 +2936,15 @@ void StartAtTask(void *argument)
 						memcpy(SMS_text, msgAT, SMS_text_len);
 					} else {
 						if (flags.cmt) {
-							int j = strlen(SMS_text);
-							if ((j + strlen(msgAT)) < SMS_BUF_LEN) {
-								if (strlen(msgAT)) Report(false, msgAT);
-								memcpy(&SMS_text[j], msgAT, strlen(msgAT));
+							j = strlen(SMS_text);
+							i = strlen(msgAT);
+							if ((j + i) < SMS_BUF_LEN) {
+								memcpy(&SMS_text[j], msgAT, i);
 								SMS_text_len = strlen(SMS_text);
+								if (i) Report(false, msgAT);
 								memset(fromNum, 0, sizeof(fromNum));
-								if (conv_ucs2_text((uint8_t *)SMS_text, abcd, dcs, fromNum) > 0) {
-									strcpy(msgGPRS, "[SMS] abcd:");
-									for (j = 0; j < sizeof(abcd); j++) sprintf(msgGPRS+strlen(msgGPRS), "%02X", abcd[j]);
-									sprintf(msgGPRS+strlen(msgGPRS), " dcs=%02X%02X from='%s' body:", dcs[0], dcs[1], fromNum);
-									Report(true, "%s\r\n", msgGPRS);
-									Report(false, "%s\r\n", SMS_text);
+								if (conv_ucs2_text((uint8_t *)SMS_text, fromNum) > 0) {
+									Report(true, "[SMS] from='%s' body:\r\n%s\r\n", fromNum, SMS_text);
 								}
 								memset(msgAT, 0, sizeof(msgAT));
 							}
@@ -2979,9 +2960,7 @@ void StartAtTask(void *argument)
 							memset(msgGPRS, 0, sizeof(msgGPRS));
 							memcpy(msgGPRS, uks, uke - uks);
 							memset(SMS_text, 0, sizeof(SMS_text));
-							if (ucs2_to_text(msgGPRS, (uint8_t *)SMS_text)) {
-								Report(false, "%s\r\n", SMS_text);
-							}
+							if (ucs2_to_text(msgGPRS, (uint8_t *)SMS_text)) Report(false, "%s\r\n", SMS_text);
 						}
 						memset(msgAT, 0, sizeof(msgAT));
 					}
@@ -2994,7 +2973,7 @@ void StartAtTask(void *argument)
 				if (strlen(msgAT)) Report(false, msgAT);
 				//---------------------------------------------------------------------
 
-				if (counter >= 5) {
+				if (counter) {
 					counter = 0;
 					cmdsInd = 0;
 					cmdsDone = true;
