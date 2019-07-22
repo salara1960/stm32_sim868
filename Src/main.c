@@ -62,7 +62,7 @@
 //const char *ver = "ver 2.2rc1";//03.06.2019 - major changes : create gprs connection and send sensor's type json messages
 //const char *ver = "ver 2.2rc2";//03.06.2019 - minor changes : make functions for make json_string for data
 //const char *ver = "ver 2.2rc3";//04.06.2019 - minor changes : edit gprs connection mode (add commands CON: DIS:)
-//const char *ver = "ver 2.2rc4";//05.06.2019 - minor changes : add commands SRV:srv_adr:srv_port (for example : SRV:127.0.0.1:9000)
+//const char *ver = "ver 2.2rc4";//05.06.2019 - minor changes : add commands :SRV=srv_adr:srv_port (for example : SRV:127.0.0.1:9000)
 //const char *ver = "ver 2.2rc5";//05.06.2019 - minor changes : add GPS json_string to GPRS_queue (for sending to tcp_server)
 //const char *ver = "ver 2.2rc6";//05.06.2019 - minor changes : add function  toDisplay(...);
 //const char *ver = "ver 2.3rc1";//06.06.2019 - major changes : remove GpsTask, all gps support now moved to AtTask
@@ -86,7 +86,7 @@
 //const char *ver = "ver 3.0rc2";//17.07.2019 - minor changes : '+CMT:' continue - support Data coding: GSM7bit
 //const char *ver = "ver 3.0rc3";//20.07.2019 - minor changes : sms mode edit continue
 //const char *ver = "ver 3.1rc1";//21.07.2019 - minor changes : fixed bug in callback function (at_commands port of sim868)
-const char *ver = "ver 3.1rc2";//22.07.2019 - minor changes : removed unused variables + some changes in sms parser
+const char *ver = "ver 3.1rc2";//22.07.2019 - minor changes : some changes in sms parser + change command format - :CMD (CMD=OFF,ON,...)
 
 
 
@@ -161,7 +161,7 @@ UART_HandleTypeDef *portLOG;//huart3;
 	SPI_HandleTypeDef *portOLED;//hspi3;
 #endif
 
-static const char *_extDate = "DATE:";
+static const char *_extDate = ":DATE=";
 bool evt_clear = false;
 static bool setDate = false;
 #ifndef SET_RTC_TMR
@@ -203,7 +203,7 @@ const char *cmds[] = {
 	"AT+GMR\r\n",//get version of FW
 	"AT+GSN\r\n",//get IMEI
 	"AT+CNMI=1,2,0,1,0\r\n",
-	"AT+SCLASS0=0;+CREG=2\r\n",
+	"AT+SCLASS0=0\r\n",
 	"AT+CPMS=\"SM\",\"SM\",\"SM\"\r\n",
 	"AT+CMGF=0\r\n",//;+CLIP=1\r\n",
 //	"AT+CIMI\r\n",//get IMCI
@@ -1345,7 +1345,7 @@ void LogData()
 	RxBuf[rx_uk++] = (char)lRxByte;
 	if (lRxByte == 0x0d) {//end of line
 		bool priz = false;
-		char *uk = strstr(RxBuf, _extDate);//const char *_extDate = "DATE:";
+		char *uk = strstr(RxBuf, _extDate);//const char *_extDate = ":DATE=";
 		if (uk) {
 			uk += strlen(_extDate);
 			if (*uk != '?') {
@@ -1362,63 +1362,62 @@ void LogData()
 			} else setDate = true;
 			evt_clear = true;
 		} else {
-				if (strstr(RxBuf, "INF:")) {
-					flags.inf = 1; priz = 1;
-				} else if (strstr(RxBuf, "GET:")) {
-					flags.msg_begin = 1;
-					priz = true;
-				} else if ((uk = strstr(RxBuf, "SRV:")) != NULL) {
-					getAdrPort(uk + 4);
-					*(uk + 4) = '\0';
-					flags.srv = 1; priz = true;
-				} else if (strstr(RxBuf, "CON:")) {
-					flags.connect = 1; priz = true;
-					con_dis = true;
-				} else if (strstr(RxBuf, "DIS:")) {
-					flags.disconnect = 1; priz = true;
-					con_dis = false;
-				} else if (strstr(RxBuf, "VIO:")) {
-					flags.vio = 1; priz = true;
-				} else if (strstr(RxBuf, "ON:")) {
-					evt_gsm = 1; priz = true;
-				} else if (strstr(RxBuf, "OFF:")) {
-					evt_gsm = 2; priz = true;
-				}/* else if (strstr(RxBuf, "COMBO:")) {
-					flags.combo_log_show = ~flags.combo_log_show; priz = true;
-				}*/ else if (strstr(RxBuf, "GPS:")) {
-					flags.gps_log_show = ~flags.gps_log_show; priz = true;
-				} else if (strstr(RxBuf, "I2C:")) {
-					flags.i2c_log_show = ~flags.i2c_log_show; priz = true;
-				} else if (strstr(RxBuf, "RESTART:")) {
-					if (LoopAll) flags.restart = 1;
-					else {
+			if (strstr(RxBuf, ":INF")) {
+				flags.inf = 1; priz = 1;
+			} else if (strstr(RxBuf, ":GET")) {
+				flags.msg_begin = 1;
+				priz = true;
+			} else if ((uk = strstr(RxBuf, ":SRV=")) != NULL) {
+				if (strlen(RxBuf) > 7) {
+					getAdrPort(uk + 5);
+					*(uk + 5) = '\0';
+				}
+				flags.srv = 1; priz = true;
+			} else if (strstr(RxBuf, ":CON")) {
+				flags.connect = 1; priz = true;
+				con_dis = true;
+			} else if (strstr(RxBuf, ":DIS")) {
+				flags.disconnect = 1; priz = true;
+				con_dis = false;
+			} else if (strstr(RxBuf, ":VIO")) {
+				flags.vio = 1; priz = true;
+			} else if (strstr(RxBuf, ":ON")) {
+				evt_gsm = 1; priz = true;
+			} else if (strstr(RxBuf, ":OFF")) {
+				evt_gsm = 2; priz = true;
+			} else if (strstr(RxBuf, ":GPS")) {
+				flags.gps_log_show = ~flags.gps_log_show; priz = true;
+			} else if (strstr(RxBuf, "I2C:")) {
+				flags.i2c_log_show = ~flags.i2c_log_show; priz = true;
+			} else if (strstr(RxBuf, ":RESTART")) {
+				if (LoopAll) flags.restart = 1;
+				else {
 #ifdef SET_OLED_I2C
-						i2c_ssd1306_clear();
+					i2c_ssd1306_clear();
 #endif
 #ifdef SET_OLED_SPI
-						spi_ssd1306_clear();
+					spi_ssd1306_clear();
 #endif
-						NVIC_SystemReset();
-					}
-				} else  if (strstr(RxBuf, "STOP:")) {
-					flags.stop = 1;
-				} else {
-					if (strstr(RxBuf, "AT")) {
-						strcat(RxBuf, "\n"); priz = true;
-					} else {
-						if ((uk = strchr(RxBuf, '\r')) != NULL) *uk = '\0';
-					}
-
-					if (LoopAll) {
-						int len = strlen(RxBuf);
-						char *buff = (char *)calloc(1, len + 1);
-						if (buff) {
-							memcpy(buff, RxBuf, len);
-							if (putQ(buff, &q_cmd) < 0) free(buff);
-						}
-					}
-
+					NVIC_SystemReset();
 				}
+			} else  if (strstr(RxBuf, ":STOP")) {
+				flags.stop = 1;
+			} else {
+				if (strstr(RxBuf, "AT")) {
+					strcat(RxBuf, "\n"); priz = true;
+				} else {
+					if ((uk = strchr(RxBuf, '\r')) != NULL) *uk = '\0';
+				}
+				if (LoopAll && (RxBuf[0] != ':')) {
+					int len = strlen(RxBuf);
+					char *buff = (char *)calloc(1, len + 1);
+					if (buff) {
+						memcpy(buff, RxBuf, len);
+						if (putQ(buff, &q_cmd) < 0) free(buff);
+					}
+				}
+				//
+			}
 
 			if (priz) {
 
@@ -2971,7 +2970,7 @@ void StartAtTask(void *argument)
 
 		if (flags.srv) {
 			flags.srv = 0;
-			Report(true, "NEW SERVER : %s:%u\r\n", srv_adr, srv_port);
+			Report(true, "CURRENT SERVER : %s:%u\r\n", srv_adr, srv_port);
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 			sprintf(toScr, "%s", srv_adr);
 			toDisplay((const char *)toScr, 0, 2, true);
