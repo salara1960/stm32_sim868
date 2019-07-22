@@ -85,7 +85,8 @@
 //const char *ver = "ver 3.0rc1";//16.07.2019 - major changes : add sms support - step 1 ('+CMT:' mode)
 //const char *ver = "ver 3.0rc2";//17.07.2019 - minor changes : '+CMT:' continue - support Data coding: GSM7bit
 //const char *ver = "ver 3.0rc3";//20.07.2019 - minor changes : sms mode edit continue
-const char *ver = "ver 3.1rc1";//21.07.2019 - minor changes : fixed bug in callback function (at_commands port of sim868)
+//const char *ver = "ver 3.1rc1";//21.07.2019 - minor changes : fixed bug in callback function (at_commands port of sim868)
+const char *ver = "ver 3.1rc2";//22.07.2019 - minor changes : removed unused variables + some changes in sms parser
 
 
 
@@ -141,7 +142,7 @@ const uint32_t ModuleOFF = 1750;
 const uint32_t ModuleON  = 1150;
 
 const char *dev_name = "STM32_SIM868";
-char devID[16] = {0};//imei of gsm module
+char devID[size_imei + 1] = {0};//imei of gsm module
 
 volatile static uint32_t secCounter = 0;//period 1s
 volatile static uint64_t HalfSecCounter = 0;//period 250ms
@@ -202,7 +203,7 @@ const char *cmds[] = {
 	"AT+GMR\r\n",//get version of FW
 	"AT+GSN\r\n",//get IMEI
 	"AT+CNMI=1,2,0,1,0\r\n",
-	"AT+SCLASS0=0\r\n",
+	"AT+SCLASS0=0;+CREG=2\r\n",
 	"AT+CPMS=\"SM\",\"SM\",\"SM\"\r\n",
 	"AT+CMGF=0\r\n",//;+CLIP=1\r\n",
 //	"AT+CIMI\r\n",//get IMCI
@@ -227,7 +228,7 @@ const char *cmds[] = {
 const char *sim_num = "+79062100000";
 const char *srv_adr_def = "127.0.0.1";
 const uint16_t srv_port_def = 9192;
-static char srv_adr[64] = {0};
+static char srv_adr[16] = {0};
 static uint16_t srv_port;
 
 const char *gprsDISCONNECT = "AT+CIPCLOSE\r\n";
@@ -285,6 +286,12 @@ const char *Items[] = {
 
 #ifdef SET_SMS
 
+	const char *smsType[max_smsType] = {
+		"+CMT: ",
+		"+SCLASS0: ",
+		"+CMGR: "
+	};
+
 	const char *tp[4] = {//тип кодирования
 		"GSM-7bit",
 		"GSM-8bit",
@@ -302,44 +309,25 @@ const char *Items[] = {
 		"reserved",
 		"???"
 	};
+
 	char alphabet[] = "@ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 !\"#$%&'()*+,-./:;<=>?АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя\n\r`эijIЭ";
 	uint16_t cod_PDU[] = {
-	    0x0040,0x0041,0x0042,0x0043,0x0044,0x0045,0x0046,0x0047,0x0048,0x0049,0x004A,0x004B,0x004C,0x004D,0x004E,0x004F,
-	    0x0050,0x0051,0x0052,0x0053,0x0054,0x0055,0x0056,0x0057,0x0058,0x0059,0x005A,0x0061,0x0062,0x0063,0x0064,0x0065,
-	    0x0066,0x0067,0x0068,0x0069,0x006A,0x006B,0x006C,0x006D,0x006E,0x006F,0x0070,0x0071,0x0072,0x0073,0x0074,0x0075,
-	    0x0076,0x0077,0x0078,0x0079,0x007A,0x0030,0x0031,0x0032,0x0033,0x0034,0x0035,0x0036,0x0037,0x0038,0x0039,0x0020,
-	    0x0021,0x0022,0x0023,0x0024,0x0025,0x0026,0x0027,0x0028,0x0029,0x002A,0x002B,0x002C,0x002D,0x002E,0x002F,0x003A,
-	    0x003B,0x003C,0x003D,0x003E,0x003F,
+		0x0040,0x0041,0x0042,0x0043,0x0044,0x0045,0x0046,0x0047,0x0048,0x0049,0x004A,0x004B,0x004C,0x004D,0x004E,0x004F,
+		0x0050,0x0051,0x0052,0x0053,0x0054,0x0055,0x0056,0x0057,0x0058,0x0059,0x005A,0x0061,0x0062,0x0063,0x0064,0x0065,
+		0x0066,0x0067,0x0068,0x0069,0x006A,0x006B,0x006C,0x006D,0x006E,0x006F,0x0070,0x0071,0x0072,0x0073,0x0074,0x0075,
+		0x0076,0x0077,0x0078,0x0079,0x007A,0x0030,0x0031,0x0032,0x0033,0x0034,0x0035,0x0036,0x0037,0x0038,0x0039,0x0020,
+		0x0021,0x0022,0x0023,0x0024,0x0025,0x0026,0x0027,0x0028,0x0029,0x002A,0x002B,0x002C,0x002D,0x002E,0x002F,0x003A,
+		0x003B,0x003C,0x003D,0x003E,0x003F,
 		0x0410,0x0411,0x0412,0x0413,0x0414,0x0415,0x0401,0x0416,0x0417,0x0418,0x0419,0x041A,0x041B,0x041C,0x041D,0x041E,
 		0x041F,0x0420,0x0421,0x0422,0x0423,0x0424,0x0425,0x0426,0x0427,0x0428,0x0429,0x042A,0x042B,0x042C,0x042D,0x042E,
 		0x042F,0x0430,0x0431,0x0432,0x0433,0x0434,0x0435,0x00B8,0x0436,0x0437,0x0438,0x0439,0x043A,0x043B,0x043C,0x043D,
 		0x043E,0x043F,0x0440,0x0441,0x0442,0x0443,0x0444,0x0445,0x0446,0x0447,0x0448,0x0449,0x044A,0x044B,0x044C,0x044D,
 		0x044E,0x044F,0x000A,0x000D,0x0060,0x0454,0x0456,0x0457,0x0406,0x0404
 	};
-/*
-	char alphabet[] = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЬЪЭЮЯабвгдеёжзийклмнопрстуфхцчшщэюяABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'-* :;)(.,!=_";
-	char cod_PDU[][4] = {
-	        "0410","0411","0412","0413","0414","0415","00A8","0416","0417",
-	        "0418","0419","041A","041B","041C","041D","041E","041F","0420",
-	        "0421","0422","0423","0424","0425","0426","0427","0428","0429",
-	        "042C","042A","042D","042E","042F","0430","0431","0432","0433",
-	        "0434","0435","00B8","0436","0437","0438","0439","043A","043B",
-	        "043C","043D","043E","043F","0440","0441","0442","0443","0444",
-	        "0445","0446","0447","0448","0449","044D","044E","044F","0041",
-	        "0042","0043","0044","0045","0046","0047","0048","0049","004A",
-	        "004B","004C","004D","004E","004F","0050","0051","0052","0053",
-	        "0054","0055","0056","0057","0058","0059","005A","0061","0062",
-	        "0063","0064","0065","0066","0067","0068","0069","006A","006B",
-	        "006C","006D","006E","006F","0070","0071","0072","0073","0074",
-	        "0075","0076","0077","0078","0079","007A","0030","0031","0032",
-	        "0033","0034","0035","0036","0037","0038","0039","0027","002D",
-	        "002A","0020","003A","003B","0029","0028","002E","002C","0021",
-	        "003D","005F"};
-*/
+
 	const char *eolin = "\r\n";
 	int TSINPART = 0;
 	char SMS_text[SMS_BUF_LEN];
-	int SMS_text_len = 0;
 
 #endif
 
@@ -454,6 +442,7 @@ int main(void)
     conf.jfes_free = free;//vPortFree;
     jconf = &conf;
 #endif
+
 
   /* USER CODE END 2 */
 
@@ -982,7 +971,7 @@ uint32_t tik = twait / 10, cnt = 10;
 
 	flags.gps_log_show   = 0;
 	flags.i2c_log_show   = 0;
-	flags.combo_log_show = 0;
+	//flags.combo_log_show = 0;
 	onGNS = false;
 
 	Report(true, "GSM_KEY set to 0 (vio=%u)\r\n", vio);
@@ -1394,9 +1383,9 @@ void LogData()
 					evt_gsm = 1; priz = true;
 				} else if (strstr(RxBuf, "OFF:")) {
 					evt_gsm = 2; priz = true;
-				} else if (strstr(RxBuf, "COMBO:")) {
+				}/* else if (strstr(RxBuf, "COMBO:")) {
 					flags.combo_log_show = ~flags.combo_log_show; priz = true;
-				} else if (strstr(RxBuf, "GPS:")) {
+				}*/ else if (strstr(RxBuf, "GPS:")) {
 					flags.gps_log_show = ~flags.gps_log_show; priz = true;
 				} else if (strstr(RxBuf, "I2C:")) {
 					flags.i2c_log_show = ~flags.i2c_log_show; priz = true;
@@ -1895,7 +1884,7 @@ char udhi_str[32] = {0}, sca_str[32] = {0};
 uint8_t udhi_4[5] = {0};
 uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 
-	if (!buffer_txt) return ret;
+	if ((ps0 = strstr((char *)buffer_txt, "\r\nOK\r\n")) != NULL) *(ps0) = '\0';
 
     len  =  strlen((char *)buffer_txt);
 
@@ -1903,23 +1892,19 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 		*buffer_txt = 0;
 		return ret;
 	} else {
-		tt = 0; pdu = 0;
+		tt = pdu = 0;
 		ps1 = (char *)&buffer_txt[0];
 		ps0 = nachalo = ps1;
 		ps_begin = ps_sta = ps1;
 		memset(words, 0, sizeof(words));
 		i = j = 0;
-		k = ofs = 0;
-		ina0 = strstr(ps1, "+CMT: ");//+CMT: ,,26    //+CMT: ,26   //+CMT: "",26
-		if (ina0) {
-			ofs = 6;
-			ina = ina0;
-		} else {
-			ina0 = strstr(ps1, "+CMGR: ");
-			if (ina0) { ofs = 7; ina = ina0; }
-			else {
-				ina0 = strstr(ps1, "+CLASS0: ");
-				if (ina0) { ofs = 9; ina = ina0; }
+		ofs = 0;
+		for (k = 0; k < max_smsType; k++) {
+			ina0 = strstr(ps1, smsType[k]);////+CMT: ,,26 //+CMT: ,26 //+CMT: "",26 | "+CLASS0: " | "+CMGR: "
+			if (ina0) {
+				ina = ina0;
+				ofs = strlen(smsType[k]);
+				break;
 			}
 		}
 		if (ina) {
@@ -1930,7 +1915,8 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 				nachalo = ina2;//начало pdu !!!!!!!!!!!!!!!!!!!!!!!!!!
 				if ((ina2 - ps1) < (len - ofs)) its_ok = 1;
 				//---------------------------------------------------------
-				qik = strstr(ina, ",,"); k = 2;
+				k = 2;
+				qik = strstr(ina, ",,");
 				if (!qik) {
 					qik = strstr(ina, "\",");
 					if (!qik) {
@@ -1940,7 +1926,7 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 				}
 				if (qik) {
 					qik += k;//указатель на начало длинны сообщения в байтах
-					if ((ina2 - qik) > 0) i = ina2 - qik - 1;//количество символов длинны самого pdu в байтах
+					if ((ina2 - qik) > 1) i = ina2 - qik - 2;//!!!!!!!!!!!!!!! //1;//количество символов длинны самого pdu в байтах
 					if ((i > 0) && (i < 4)) {
 						memset(words, 0, sizeof(words));
 						memcpy(words, qik, i);
@@ -2079,7 +2065,7 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 				tt1 += new_a;
 				buffer_temp[tt1++] = 0x20;
 			}
-			memcpy(words, ps1 + len_num_a, 2);	  //p_id=myhextobin(words[0], words[1]);
+			memcpy(words, ps1 + len_num_a, 2);	  //p_id=hextobin(words[0], words[1]);
 			pss = ps1 + len_num_a + 2;            //указатель на DCS
 
 			memcpy(words, pss, 2);
@@ -2304,10 +2290,9 @@ int ucs2_to_text(char *buf_in, uint8_t *buf_out)
 	int len = strlen(buf_in);	if (!len) return 0;
 
 	int dl_ind = 0, yes, it = 0, j, tt = 0, tt1 = 0;
-	char words[5], tmp[5];
+	char words[5] = {0}, tmp[5];
 
     while (1) {
-    	memset(words, 0, sizeof(words));
     	memcpy(words, &buf_in[tt], 4);
     	yes = 0;
     	for (j = 0; j < cod_PDU_len; j++) {
@@ -2328,6 +2313,8 @@ int ucs2_to_text(char *buf_in, uint8_t *buf_out)
     	dl_ind++;
     	if (tt >= len) break;
     }
+
+    buf_out[dl_ind] = '\0';
 
     return dl_ind;
 }
@@ -2576,19 +2563,16 @@ void StartAtTask(void *argument)
 	char *uk = NULL, *uks = NULL, *uke = NULL;
 	bool repeat = false;
 
-	flags.imei_flag = 0;
-	flags.inf       = 0;
-	flags.cmt       = 0;
+	flags.imei_flag = flags.inf       = 0;
+	flags.sms       = flags.auto_cmd  = 0;
 
-	gprs_stat.connect     = gprs_stat.init = 0;
-	gprs_stat.try_connect = gprs_stat.prompt = 0;
-	gprs_stat.try_send    = gprs_stat.cgatt_on = 0;
-	gprs_stat.send_ok     = gprs_stat.next_send = 1;
+	memset((uint8_t *)&gprs_stat, 0, sizeof(s_gprs_stat));
+	gprs_stat.send_ok = gprs_stat.next_send = 1;
 
 	bool yes = false;
 	msgGPRS[0] = 0;
-	char cmd[80];
-	int dl, i, j;
+	char cmd[64];
+	int dl, i, j, k;
 
 #ifdef SET_SMS
 	char fromNum[lenFrom] = {0};
@@ -2657,7 +2641,7 @@ void StartAtTask(void *argument)
 							if (cmdsInd >= cmdsMax) {
 								cmdsInd = -1;
 								flags.auto_cmd = 0;
-								flags.gps_log_show = flags.i2c_log_show = flags.combo_log_show = 1;
+								flags.gps_log_show = flags.i2c_log_show = 1;//flags.combo_log_show = 1;
 							} else {
 								if (cmdsDone) {
 									if (check_hstmr(new_cmds)) {
@@ -2757,10 +2741,10 @@ void StartAtTask(void *argument)
 							buff = cmd;
 							gprs_stat.next_send = 0;
 						} else {
-							if (flags.combo_log_show) {
+							//if (flags.combo_log_show) {
 								msgGPRS[dl - 2] = 0;
 								Report(true, "%s (%d)\r\n", msgGPRS, dl - 2);
-							}
+							//}
 						}
 					}
 				}
@@ -2825,9 +2809,9 @@ void StartAtTask(void *argument)
 						}
 					} else if (flags.imei_flag) {
 						flags.imei_flag = 0;
-						if (strlen(msgAT) >= 15) {
-							memset(devID, 0, sizeof(devID));
-							strncpy(devID, msgAT, 15);
+						if (strlen(msgAT) >= size_imei) {
+							strncpy(devID, msgAT, size_imei);
+							devID[size_imei] = '\0';
 						}
 					} else if (strstr(msgAT, "+CREG:")) {//+CREG: 0,2
 						cnt++;
@@ -2841,11 +2825,7 @@ void StartAtTask(void *argument)
 							repeat = false;
 						}
 						if (repeat) tms = max_ms;
-					} /*else if (strstr(msgAT, "RDY")) counter++;
-					else if (strstr(msgAT, "+CFUN:")) counter++;
-					else if (strstr(msgAT, "+CPIN: READY")) counter++;
-					else if (strstr(msgAT, "Call Ready")) counter++;*/
-					else if (strstr(msgAT, "SMS Ready")) counter = 1;
+					} else if (strstr(msgAT, "SMS Ready")) counter = 1;
 					else if (strstr(msgAT, "+CPIN: NOT INSERTED")) counter = 1;
 					else if ((uki = strstr(msgAT, "+CSQ: ")) != NULL) {//+CSQ: 15,0
 						uki += 6;
@@ -2928,27 +2908,26 @@ void StartAtTask(void *argument)
 					}
 					//
 #ifdef SET_SMS
-					if (strstr(msgAT, "+CMT: ")) {
-						flags.cmt = 1;
+					if ( strstr(msgAT, "+CMT: ") || strstr(msgAT, "+SCLASS0: ") ) {
+						flags.sms = 1;
 						memset(SMS_text, 0, SMS_BUF_LEN);
-						SMS_text_len = strlen(msgAT);
-						if (SMS_text_len > SMS_BUF_LEN - 1) SMS_text_len = SMS_BUF_LEN - 1;
-						memcpy(SMS_text, msgAT, SMS_text_len);
+						k = strlen(msgAT);
+						if (k > SMS_BUF_LEN - 1) k = SMS_BUF_LEN - 1;
+						strncpy(SMS_text, msgAT, k);
 					} else {
-						if (flags.cmt) {
+						if (flags.sms) {
+							flags.sms = 0;
 							j = strlen(SMS_text);
 							i = strlen(msgAT);
 							if ((j + i) < SMS_BUF_LEN) {
-								memcpy(&SMS_text[j], msgAT, i);
-								SMS_text_len = strlen(SMS_text);
+								strcat(&SMS_text[j], msgAT);
 								if (i) Report(false, msgAT);
 								memset(fromNum, 0, sizeof(fromNum));
 								if (conv_ucs2_text((uint8_t *)SMS_text, fromNum) > 0) {
 									Report(true, "[SMS] from='%s' body:\r\n%s\r\n", fromNum, SMS_text);
 								}
-								memset(msgAT, 0, sizeof(msgAT));
+								*msgAT = '\0';
 							}
-							flags.cmt = 0;
 						}
 					}
 					//
@@ -2957,12 +2936,10 @@ void StartAtTask(void *argument)
 						uks += 11;//uk to begin ucs2 string
 						uke = strstr(uks, "\", 72");
 						if (uke) {
-							memset(msgGPRS, 0, sizeof(msgGPRS));
-							memcpy(msgGPRS, uks, uke - uks);
-							memset(SMS_text, 0, sizeof(SMS_text));
-							if (ucs2_to_text(msgGPRS, (uint8_t *)SMS_text)) Report(false, "%s\r\n", SMS_text);
+							*uke = '\0';
+							if (ucs2_to_text(uks, (uint8_t *)SMS_text)) Report(false, "%s\r\n", SMS_text);
 						}
-						memset(msgAT, 0, sizeof(msgAT));
+						*msgAT = '\0';
 					}
 					//
 #endif

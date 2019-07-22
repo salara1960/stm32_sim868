@@ -52,15 +52,15 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
-#define MAX_QMSG 8//16
+#define MAX_QMSG 8
 
 #pragma pack(push,1)
 typedef struct {
 	uint8_t chip;
-	float temp;// DegC
-	float pres;// mmHg
-	float humi;// %rH
-	float lux;// lux
+	float temp; // DegC
+	float pres; // mmHg
+	float humi; // %rH
+	float lux;  // lux
 } result_t;
 #pragma pack(pop)
 
@@ -98,7 +98,7 @@ typedef struct {
 typedef struct {
 	unsigned gps_log_show:1;
 	unsigned i2c_log_show:1;
-	unsigned combo_log_show:1;
+	unsigned unused:1;//	unsigned combo_log_show:1;
 	unsigned restart:1;
 	unsigned stop:1;
 	unsigned imei_flag:1;
@@ -111,7 +111,7 @@ typedef struct {
 	unsigned auto_cmd:1;
 	unsigned inf:1;
 	unsigned vio:1;
-	unsigned cmt:1;
+	unsigned sms:1;
 } s_flags;
 #pragma pack(pop)
 
@@ -196,6 +196,7 @@ extern SPI_HandleTypeDef *portSPI;
 #define wait_sensor_def 32
 #define wait_gps_def wait_sensor_def - 2 //>> 1
 #define wait_ack_cli_sec 10
+#define size_imei 15
 
 #ifdef SET_JFES
 	#define MAX_UART_BUF 704//640//512//480//400//384//256
@@ -260,12 +261,8 @@ extern void Leds(bool act, uint16_t Pin);
 #define SCREEN_SIZE 16*8
 #define LED_ERROR LED_RED_Pin
 #define GPIO_PortD GPIOD
-#define LOOP_FOREVER() while(1) {}
 
-//#define SS_SD_SELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_RESET)
-//#define SS_SD_DESELECT() HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET)
-//#define LD_ON HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_SET); //RED
-//#define LD_OFF HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_ERROR, GPIO_PIN_RESET); //RED
+#define LOOP_FOREVER() while(1) {}
 
 #define _250ms 1
 #define _500ms 2
@@ -282,6 +279,9 @@ extern void Leds(bool act, uint16_t Pin);
 	#define CS_OLED_DESELECT() HAL_GPIO_WritePin(OLED_CS_GPIO_Port, OLED_CS_Pin, GPIO_PIN_SET)
 #endif
 
+#ifdef SET_SMS
+	#define max_smsType 3
+#endif
 
 /* USER CODE END Private defines */
 
