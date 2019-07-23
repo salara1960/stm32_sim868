@@ -5,50 +5,50 @@
 #################################################################################################
 
 
-## Состав рабочего оборудования:
+## The composition of the working equipment:
 
 ```
-* stm32f4 (STM32F407GDISC1 board) - плата микроконтроллера
-* ssd1306 - OLED дисплей 0.96" 128x64 (интерфейы I2C,SPI)
-* bmp280 - датчик атмосферного давления и температуры воздуха (интерфейс I2C).
-* bh1750 - датчик освещенности (интерфейс I2C).
-* sim868 - плата с модулем SIM868 (SIMCOM).
+* stm32f4 (STM32F407GDISC1 board) - microcontroller board
+* ssd1306 - OLED display 0.96 "128x64 (interfaces I2C, SPI)
+* bmp280 - atmospheric pressure and air temperature sensor (I2C interface).
+* bh1750 - light sensor (I2C interface).
+* sim868 - card with SIM868 module (SIMCOM).
 ```
 
 
-# Средства разработки:
+# Development Tools:
 
 ```
-* STM32CubeMX - графический пакет для создание проектов (на языке Си) под микроконтроллеры семейства STM32
+* STM32CubeMX - graphic package for creating projects (in C language) under the microcontrollers of the STM32 family
   (https://www.st.com/en/development-tools/stm32cubemx.html).
-* System Workbench for STM32 - IDE среда разработки ПО для микроконтроллеров семейства STM32
+* System Workbench for STM32 - software development environment for microcontrollers of the STM32 family (IDE)
   (https://www.st.com/en/development-tools/sw4stm32.html).
 ```
 
 
-# Функционал:
+# Functional:
 
-* Устройство использует программные средства freeRTOS :
-  - StartAtTask - нитка (задача), работающая портом команд модуля SIM868.
-  - STartSensTask - нитка (задача), работающая с датчиками bmp280, bh1750.
-  - StartDefTask - нитка (задача), выполняющая функцию main и работающая с данными GPS (NMEA) модуля SIM868.
-  - mailQueue - очередь для передачи данных от bmp280 и bh1750 из задачи StartSensTask в задачу StartDefTask,
-    для вывода данных на дисплей ssd1306 и для вывода в последовательный порт (USART3).
-  - binSemHandle - бинарный семафор на доступ к порту USART3 (по записи).
-* Устройство инициализирует некоторые интерфейсы микроконтроллера :
-  - GPIO : подключены четыре сетодиода : PD12..PD15, один пин (PA3) вкл./выкл. sim868, пин PA2 - VIO
-  - I2C1 : режим мастера с частотой 400Кгц (шина ослуживает ssd1306, bmp280, bh1750).
-  - USART3 : параметры порта 500000 8N1 - порт для логов и передачи AT команд модулю SIM868, если подключен комп.
-  - UART4 : параметры порта 9600 8N1 - порт AT команд модуля SIM868.
-  - TIM2 : таймер-счетчик временных интервалов в 250 мс. и 1 секунду, реализован в callback-функции.
-  - RTC : часы реального времени, могут быть установлены с помощью команды DATE:
-  - SPI3 : обслуживает OLED SSD1306 : RST(PC11), DC(PB6), CS(PB4), SCK(PB3), MOSI(PC12).
-* Системный таймер (TIM1) считает миллисекунды от начала работы устройства.
-* Прием данных по всем последовательным портам (USART3, UART4) выполняется в callback-функции обработчика прерывания.
-  Принятые данные передаются в соответствующие задачи (нитки) через структурные очереди.
-* Каждые 30 секунд (или по событию) считываются данные с датчиков bmp280 и bh1750, выполняется пересчет атмосферного
-  давления в мм ртутного столба и температуры в градусы Цельсия, полученные данные выдаются
-  в USART3, например :
+* The device uses freeRTOS software:
+  - StartAtTask - task, working with the command port of the SIM868 module.
+  - STartSensTask - task, working with sensors bmp280, bh1750.
+  - StartDefTask - task that performs the function of main and works with GPS data (NMEA) of the SIM868 module.
+  - mailQueue - the queue to transfer data from bmp280 and bh1750 from the StartSensTask task to the StartDefTask task,
+     to display data on the ssd1306 display and to output to the serial port (USART3).
+  - binSemHandle - binary semaphore on USART3 port access (by appointment).
+* The device initializes some microcontroller interfaces:
+  - GPIO : four LEDs are used: PD12..PD15, one pin (PA3) on/off sim868, pin PA2 - VIO
+  - I2C1 : master mode with a frequency of 400KHz (the bus serves ssd1306, bmp280, bh1750).
+  - USART3 : parameters of port 115200 8N1 - a port for logging and transmitting AT commands to a SIM868 module
+     if a computer is connected.
+  - UART4 : parameters of port 9600 8N1 - the AT port of the SIM868 module commands.
+  - TIM2 : Timer 250 ms. and 1 second, implemented in the callback function.
+  - RTC : real time clock, can be set using the command :DATE=epoch_time
+  - SPI3 : serves OLED SSD1306: RST (PC11), DC (PB6), CS (PB4), SCK (PB3), MOSI (PC12).
+* The system timer (TIM1) counts milliseconds from the start of operation of the device.
+* Data reception on all serial ports (USART3, UART4) is performed in the callback function of the interrupt handler.
+  Received data is transferred to the corresponding tasks through structural queues.
+* Every 30 seconds (or on an event) data from sensors bmp280 and bh1750 is read, atmospheric recalculation is performed
+     pressure in mmHg and temperatures in degrees Celsius, the data obtained are issued in USART3, for example:
 
 ```
 AT
@@ -110,7 +110,7 @@ AT+CIPSEND=511
         "SatGNSSU": 0,
         "SatGLONASSV": 0,
         "dBHz": 0,
-        "Rssi": 15,
+        "Rssi": -83,
         "Press": 761.61,
         "Temp": 26.25,
         "Lux": 55.00
@@ -126,10 +126,9 @@ CLOSE OK
 
 ```
 
-  Часть этих данные (время работы, адрес сервера и состояние соединения, атмосферное давление, температура воздуха и освещенность)
-отображаются на дисплей ssd1306.
+  Some of this data (operating time, server address and connection status, atmospheric pressure, air temperature and light intensity) is displayed on the ssd1306 display.
 
-* Через usart3 можно отправлять команды на модуль SIM868, например :
+* Via usart3, you can send commands to the SIM868 module, for example:
 
 ```
 AT+GMR
@@ -137,5 +136,7 @@ Revision:1418B03SIM868M32_BT
 OK
 ```
 
-* Функционал проекта в процессе пополнения.
+* The functional project in the process of replenishment.
+
+
 

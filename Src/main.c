@@ -87,7 +87,8 @@
 //const char *ver = "ver 3.0rc3";//20.07.2019 - minor changes : sms mode edit continue
 //const char *ver = "ver 3.1rc1";//21.07.2019 - minor changes : fixed bug in callback function (at_commands port of sim868)
 //const char *ver = "ver 3.1rc2";//22.07.2019 - minor changes : some changes in sms parser + change command format - :CMD (CMD=OFF,ON,...)
-const char *ver = "ver 3.1rc3";//23.07.2019 - minor changes : add : log_show flag, RSSI to json, new commands - :LOG? , :LOG
+//const char *ver = "ver 3.1rc3";//23.07.2019 - minor changes : add : log_show flag, RSSI to json, new commands - :LOG? , :LOG
+const char *ver = "ver 3.1rc4";//23.07.2019 - minor changes : show RSSI in dBm
 
 
 /*
@@ -281,6 +282,15 @@ const char *Items[] = {
 	"Lux",
 	"Humi"
 };
+
+const int8_t dBmRSSI[max_rssi] = {
+	-113,-111,-109,-107,-105,-103,-101,-99,
+	-97 ,-95 ,-93 ,-91 ,-89 ,-87 ,-85 ,-83,
+	-81 ,-79 ,-77 ,-75 ,-73 ,-71 ,-69 ,-67,
+	-65 ,-63 ,-61 ,-59 ,-57 ,-55 ,-53 ,-51
+};
+
+
 #ifdef SET_JFES
 	jfes_config_t conf;
 	jfes_config_t *jconf = NULL;
@@ -1633,7 +1643,7 @@ int8_t ret = -1;
         jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.dBHz), Items[i++], 0);//"dBHz"
 //        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.HPA), Items[i++], 0);//"HPA"
 //        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.VPA), Items[i++], 0);//"VPA"
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, gsm_stat.rssi), Items[i++], 0);//"RSSI"
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, dBmRSSI[gsm_stat.rssi&0x1f]), Items[i++], 0);//"RSSI"
 
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.pres), Items[i++], 0);//"Pres"
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.temp), Items[i++], 0);//"Temp"
@@ -1755,7 +1765,7 @@ int8_t ret = -1;
         		break;
 */
 			case 22://"RSSI"
-				len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], gsm_stat.rssi);
+				len += sprintf(tmp, "\t\"%s\": %d,\r\n", Items[i], dBmRSSI[gsm_stat.rssi&0x1f]);//gsm_stat.rssi);
 				break;
 			case 23://"Press",
 				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->sens.pres);
@@ -2859,7 +2869,7 @@ void StartAtTask(void *argument)
 							cmd[dl] = 0;
 							gsm_stat.rssi = atoi(cmd);
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-							sprintf(toScr, "RSSI : -%u dBm  ", gsm_stat.rssi);
+							sprintf(toScr, "RSSI : %d dBm  ", dBmRSSI[gsm_stat.rssi&0x1f]);//gsm_stat.rssi);
 							toDisplay((const char *)toScr, 1, 5, true);
 #endif
 							if (prf) {

@@ -198,6 +198,7 @@ extern SPI_HandleTypeDef *portSPI;
 #define wait_ack_cli_sec 10
 #define size_imei 15
 #define wait_csq_def wait_gps_def - 2
+#define max_rssi 32
 
 #ifdef SET_JFES
 	#define MAX_UART_BUF 704//640//512//480//400//384//256
