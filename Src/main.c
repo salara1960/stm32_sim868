@@ -86,8 +86,8 @@
 //const char *ver = "ver 3.0rc2";//17.07.2019 - minor changes : '+CMT:' continue - support Data coding: GSM7bit
 //const char *ver = "ver 3.0rc3";//20.07.2019 - minor changes : sms mode edit continue
 //const char *ver = "ver 3.1rc1";//21.07.2019 - minor changes : fixed bug in callback function (at_commands port of sim868)
-const char *ver = "ver 3.1rc2";//22.07.2019 - minor changes : some changes in sms parser + change command format - :CMD (CMD=OFF,ON,...)
-
+//const char *ver = "ver 3.1rc2";//22.07.2019 - minor changes : some changes in sms parser + change command format - :CMD (CMD=OFF,ON,...)
+const char *ver = "ver 3.1rc3";//23.07.2019 - minor changes : add : log_show flag, RSSI to json, new commands - :LOG? , :LOG
 
 
 /*
@@ -175,7 +175,7 @@ static char RxBuf[MAX_UART_BUF];
 volatile uint16_t rx_uk;
 uint8_t lRxByte;
 
-volatile uint8_t rmc5 = 8;//6;
+volatile uint8_t rmc5 = 12;//8;//6;
 char msgNMEA[MAX_UART_BUF] = {0};
 static s_msg_t q_gps;
 const char *nameValid[] = {"Invaid", "Valid"};
@@ -196,19 +196,19 @@ static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
-const uint8_t cmdsMax = 20-7;//19;//21;
+const uint8_t cmdsMax = 20-10;//19;//21;
 const char *cmds[] = {
 	"AT\r\n",
 	"AT+CMEE=0\r\n",
 	"AT+GMR\r\n",//get version of FW
 	"AT+GSN\r\n",//get IMEI
 	"AT+CNMI=1,2,0,1,0\r\n",
-	"AT+SCLASS0=0\r\n",
-	"AT+CPMS=\"SM\",\"SM\",\"SM\"\r\n",
-	"AT+CMGF=0\r\n",//;+CLIP=1\r\n",
+	"AT+SCLASS0=0;+CMGF=0\r\n",
+//	"AT+CPMS=\"SM\",\"SM\",\"SM\"\r\n",
+//	"AT+CMGF=0\r\n",//;+CLIP=1\r\n",
 //	"AT+CIMI\r\n",//get IMCI
 //	"AT+CMGF=1\r\n",//text mode
-	"AT+CSCS=\"IRA\"\r\n",
+//	"AT+CSCS=\"IRA\"\r\n",
 	"AT+CGNSPWR=1\r\n",// power for GPS/GLONASS ON
 	"AT+CGNSPWR?\r\n",//check power for GPS/GLONASS status
 //	"AT+CCLK?\r\n",//get date/time
@@ -243,9 +243,11 @@ osMessageQueueId_t mqData;
 uint32_t infCounter = 0;
 s_gsm_stat gsm_stat = {0};
 const char *gpsINF = "AT+CGNSINF\r\n";
+const char *atCSQ = "AT+CSQ\r\n";
 static bool con_dis = 0;
+const char *logStat[] = {"OFF", "ON"};
 
-const uint8_t maxItems = 26;//30;
+const uint8_t maxItems = 27;//30;
 const char *Items[] = {
 	"InfSeqNum",
 	"MsgType",
@@ -273,6 +275,7 @@ const char *Items[] = {
 	"dBHz",
 //	"HPA",
 //	"VPA",
+	"Rssi",
 	"Press",
 	"Temp",
 	"Lux",
@@ -969,9 +972,7 @@ void gsmONOFF(const uint32_t twait)
 bool vio = getVIO();
 uint32_t tik = twait / 10, cnt = 10;
 
-	flags.gps_log_show   = 0;
-	flags.i2c_log_show   = 0;
-	//flags.combo_log_show = 0;
+	flags.log_show   = 0;
 	onGNS = false;
 
 	Report(true, "GSM_KEY set to 0 (vio=%u)\r\n", vio);
@@ -1374,24 +1375,30 @@ void LogData()
 				}
 				flags.srv = 1; priz = true;
 			} else if (strstr(RxBuf, ":CON")) {
-				flags.connect = 1; priz = true;
+				flags.connect = 1;
+				priz = true;
 				con_dis = true;
 			} else if (strstr(RxBuf, ":DIS")) {
-				flags.disconnect = 1; priz = true;
+				flags.disconnect = 1;
+				priz = true;
 				con_dis = false;
 			} else if (strstr(RxBuf, ":VIO")) {
-				flags.vio = 1; priz = true;
+				flags.vio = 1;
+				priz = true;
 			} else if (strstr(RxBuf, ":ON")) {
-				evt_gsm = 1; priz = true;
+				evt_gsm = 1;
+				priz = true;
 			} else if (strstr(RxBuf, ":OFF")) {
-				evt_gsm = 2; priz = true;
-			} else if (strstr(RxBuf, ":GPS")) {
-				flags.gps_log_show = ~flags.gps_log_show; priz = true;
-			} else if (strstr(RxBuf, "I2C:")) {
-				flags.i2c_log_show = ~flags.i2c_log_show; priz = true;
+				evt_gsm = 2;
+				priz = true;
+			} else if ((uk = strstr(RxBuf, ":LOG")) != NULL) {//if (strstr(RxBuf, ":LOG?")) {
+				priz = true;
+				flags.log_flag = 1;
+				if (*(uk + 4) != '?') flags.log_show = ~flags.log_show;
 			} else if (strstr(RxBuf, ":RESTART")) {
-				if (LoopAll) flags.restart = 1;
-				else {
+				if (LoopAll) {
+					flags.restart = 1;
+				} else {
 #ifdef SET_OLED_I2C
 					i2c_ssd1306_clear();
 #endif
@@ -1400,9 +1407,12 @@ void LogData()
 #endif
 					NVIC_SystemReset();
 				}
-			} else  if (strstr(RxBuf, ":STOP")) {
+			} else if (strstr(RxBuf, ":STOP")) {
 				flags.stop = 1;
-			} else {
+			} else if (strstr(RxBuf, ":CSQ")) {
+				flags.csq = 1;
+				priz = true;
+		    } else {
 				if (strstr(RxBuf, "AT")) {
 					strcat(RxBuf, "\n"); priz = true;
 				} else {
@@ -1575,69 +1585,62 @@ int8_t parse_inf(char *in, s_inf_t *inf)
 	}
 	return 0;
 }
-//-----------------------------------------------------------------------------------------
-#ifdef SET_JFES
-
-//-----------------------------------------------------------------------------------------
-int makeInfJsonString(const s_data_t *data, char *buf, int max_len_buf)
+//------------------------------------------------------------------------------------------
+int8_t makeInfString(const s_data_t *data, char *buf, int max_len_buf)
 {
-int ret = -1;
+int8_t ret = -1;
 
-    if (!data || !buf || !max_len_buf) return ret;
+	if (!data || !buf || (max_len_buf < 4)) return ret;
 
-    //jfes_config_t conf = {
-    //    .jfes_malloc = (jfes_malloc_t)malloc,//getMemory,//pvPortMalloc,
-	//	.jfes_free = free//vPortFree
-    //};
-    //jfes_config_t *jconf = &conf;
-
+#ifdef SET_JFES
     uint8_t i = 0;
     jfes_value_t *obj = jfes_create_object_value(jconf);
     if (obj) {
-    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ++infCounter), Items[i++], 0);//"InfSeqNum", 0);
-    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, "+CGNSINF", 0), Items[i++], 0);//"MsgType", 0);
-    	if (strlen(devID)) jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, devID, 0), Items[i++], 0);//"DevID", 0);
-    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, dev_name, 0), Items[i++], 0);//"DevName", 0);
-    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, sim_num, 0), Items[i++], 0);//"SimNumber", 0);
-    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, get_secCounter()), Items[i++], 0);//"DevTime", 0);
-    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, xPortGetFreeHeapSize()), Items[i++], 0);//"FreeMem", 0);
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ++infCounter), Items[i++], 0);//"InfSeqNum"
+    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, "+CGNSINF", 0), Items[i++], 0);//"MsgType"
+    	if (strlen(devID)) jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, devID, 0), Items[i++], 0);//"DevID"
+    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, dev_name, 0), Items[i++], 0);//"DevName"
+    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, sim_num, 0), Items[i++], 0);//"SimNumber"
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, get_secCounter()), Items[i++], 0);//"DevTime"
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, xPortGetFreeHeapSize()), Items[i++], 0);//"FreeMem"
     	if (setDate) {
 #ifdef SET_RTC_TMR
             uint32_t ep = getSecRTC(&hrtc);
 #else
             uint32_t ep = get_extDate();
 #endif
-            jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ep), Items[i++], 0);//"EpochTime", 0);
+            jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ep), Items[i++], 0);//"EpochTime"
         } else i++;
         char stx[64];
         int dl = sprintf(stx, "%02u.%02u.%04u %02u:%02u:%02u.%03u",
         		data->inf.utc.day, data->inf.utc.mon, data->inf.utc.year,
 				data->inf.utc.hour, data->inf.utc.min, data->inf.utc.sec, data->inf.utc.ms);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), Items[i++], 0);//"UTC", 0);
-//        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.run), Items[i++], 0);//"Run", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, nameValid[data->inf.status&1], 0), Items[i++], 0);//"Status", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.latitude), Items[i++], 0);//"Latitude", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.longitude), Items[i++], 0);//"Longitude", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.altitude), Items[i++], 0);//"Altitude", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.speed), Items[i++], 0);//"Speed", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.dir), Items[i++], 0);//"Dir", 0);
-//        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.mode), Items[i++], 0);//"Mode", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.HDOP), Items[i++], 0);//"HDOP", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.PDOP), Items[i++], 0);//"PDOP", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.VDOP), Items[i++], 0);//"VDOP", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.GPSsatV), Items[i++], 0);//"SatGPSV", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.GNSSsatU), Items[i++], 0);//"SatGNSSU", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.GLONASSsatV), Items[i++], 0);//"SatGLONASSV", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.dBHz), Items[i++], 0);//"dBHz", 0);
-//        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.HPA), Items[i++], 0);//"HPA", 0);
-//        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.VPA), Items[i++], 0);//"VPA", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, stx, dl), Items[i++], 0);//"UTC"
+//        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.run), Items[i++], 0);//"Run"
+        jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, nameValid[data->inf.status&1], 0), Items[i++], 0);//"Status"
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.latitude), Items[i++], 0);//"Latitude"
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.longitude), Items[i++], 0);//"Longitude"
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.altitude), Items[i++], 0);//"Altitude"
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.speed), Items[i++], 0);//"Speed"
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.dir), Items[i++], 0);//"Dir"
+//        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.mode), Items[i++], 0);//"Mode"
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.HDOP), Items[i++], 0);//"HDOP"
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.PDOP), Items[i++], 0);//"PDOP"
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.VDOP), Items[i++], 0);//"VDOP"
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.GPSsatV), Items[i++], 0);//"SatGPSV"
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.GNSSsatU), Items[i++], 0);//"SatGNSSU"
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.GLONASSsatV), Items[i++], 0);//"SatGLONASSV"
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.dBHz), Items[i++], 0);//"dBHz"
+//        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.HPA), Items[i++], 0);//"HPA"
+//        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.VPA), Items[i++], 0);//"VPA"
+        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, gsm_stat.rssi), Items[i++], 0);//"RSSI"
 
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.pres), Items[i++], 0);//"Pres", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.temp), Items[i++], 0);//"Temp", 0);
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.lux), Items[i++], 0);//"Lux", 0);
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.pres), Items[i++], 0);//"Pres"
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.temp), Items[i++], 0);//"Temp"
+        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.lux), Items[i++], 0);//"Lux"
 
         if (data->sens.chip == BME280_SENSOR) {
-        	jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.humi), Items[i], 0);//"Humi", 0);
+        	jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->sens.humi), Items[i], 0);//"Humi"
         }
 
         jfes_size_t stx_size  = (jfes_size_t)max_len_buf;
@@ -1649,13 +1652,7 @@ int ret = -1;
         ret = 0;
     }
 
-    return ret;
-}
 #else
-//------------------------------------------------------------------------------------------
-int8_t makeInfString(const s_data_t *data, char *buf, int max_len_buf)
-{
-	if (!data || !buf || (max_len_buf < 4)) return 1;
 
 	char tmp[64];
 	int len = 4;
@@ -1757,20 +1754,23 @@ int8_t makeInfString(const s_data_t *data, char *buf, int max_len_buf)
         		len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.VPA);
         		break;
 */
-			case 22://"Press",
+			case 22://"RSSI"
+				len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], gsm_stat.rssi);
+				break;
+			case 23://"Press",
 				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->sens.pres);
 				break;
-			case 23://"Temp",
+			case 24://"Temp",
 				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->sens.temp);
 				break;
-			case 24://"Lux",
+			case 25://"Lux",
 				if (data->sens.chip == BME280_SENSOR) {
 					len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->sens.lux);
 				} else {
 					len += sprintf(tmp, "\t\"%s\": %.2f\r\n", Items[i], data->sens.lux);
 				}
 				break;
-			case 25://"Humi"
+			case 26://"Humi"
 				if (data->sens.chip == BME280_SENSOR) {
 					len += sprintf(tmp, "\t\"%s\": %.2f\r\n", Items[i], data->sens.humi);
 				} else memset(tmp, 0, sizeof(tmp));
@@ -1786,9 +1786,12 @@ int8_t makeInfString(const s_data_t *data, char *buf, int max_len_buf)
 
 	strcat(buf, "}");
 
-	return 0;
-}
+	ret = 0;
+
 #endif
+
+	return ret;
+}
 //-----------------------------------------------------------------------------------------
 void toDisplay(const char *st, uint8_t column, uint8_t line, bool clear)
 {
@@ -2338,9 +2341,9 @@ void StartDefTask(void *argument)
 
   /* USER CODE BEGIN 5 */
 
-	osDelay(1000);
+	osDelay(1200);
 
-	rmc5 = 1;
+	//rmc5 = 1;
 	initQ(&q_gps);
 
 	s_inf_t inf;
@@ -2351,27 +2354,11 @@ void StartDefTask(void *argument)
 	uint8_t row;
 	uint8_t show;
 	uint8_t new = 0;
+	bool stp = true;
 
 	/* Infinite loop */
 
   	while (LoopAll)   {
-
-  		//-------------------------------------------------------------------------
-  		//						get data from gps_queue
-  		//
-  		if (!flags.auto_cmd) {
-  			if (getQ(msgNMEA, &q_gps) >= 0) {
-  				if (flags.gps_log_show) Report(true, msgNMEA);
-  				if (!parse_inf(msgNMEA, &inf)) {
-  					flags.msg_end = 1;
-  					memcpy((uint8_t *)&iData.inf, (uint8_t *)&inf, sizeof(s_inf_t));
-  					new |= 2;
-  				}
-  			}
-  		}
-  		//--------------------------------------------------------------------------
-
-  		osDelay(10);
 
   		//--------------------------------------------------------------------------
   		//						get data from sensors_queue
@@ -2380,7 +2367,7 @@ void StartDefTask(void *argument)
   			memcpy((uint8_t *)&iData.sens, (uint8_t *)&levt, sizeof(result_t));
   			new |= 1;
   			row = 6;
-  			show = flags.i2c_log_show;
+  			show = flags.log_show;
   			sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", levt.pres, levt.temp);
   			switch (levt.chip) {
   				case BMP280_SENSOR :
@@ -2411,8 +2398,26 @@ void StartDefTask(void *argument)
 #endif
   			if (show) Report(true, DefBuf);
   		}
-
+  		//--------------------------------------------------------------------------
+  		//
+  		osDelay(100);
+  		//
   		//-------------------------------------------------------------------------
+  		//						get data from gps_queue
+  		//
+  		if (!flags.auto_cmd) {
+  			if (getQ(msgNMEA, &q_gps) >= 0) {
+  				if (flags.log_show) stp = true; else stp = false;
+  				Report(stp, msgNMEA);
+  				if (!parse_inf(msgNMEA, &inf)) {
+  					flags.msg_end = 1;
+  					memcpy((uint8_t *)&iData.inf, (uint8_t *)&inf, sizeof(s_inf_t));
+  					new |= 2;
+  				}
+  			}
+  		}
+  		//--------------------------------------------------------------------------
+  		//
   		if (flags.restart) {
   			flags.restart = 0;
   			if (gprs_stat.connect) flags.disconnect = 1;
@@ -2448,10 +2453,13 @@ void StartDefTask(void *argument)
   		}
   		//-------------------------------------------------------------------------
 
+  		osDelay(100);
 
   	}
 
-  	LOOP_FOREVER();
+  	osDelay(100);
+  	exit(0);
+  	//LOOP_FOREVER();
 
   /* USER CODE END 5 */ 
 }
@@ -2531,10 +2539,12 @@ void StartSensTask(void *argument)
 			}
 		}
 		//
-		osDelay(10);
+		osDelay(100);
 	}
 
-	LOOP_FOREVER();
+	osDelay(100);
+	exit(0);
+	//LOOP_FOREVER();
 
   /* USER CODE END StartSensTask */
 }
@@ -2564,6 +2574,7 @@ void StartAtTask(void *argument)
 
 	flags.imei_flag = flags.inf       = 0;
 	flags.sms       = flags.auto_cmd  = 0;
+	flags.log_flag  = 0;
 
 	memset((uint8_t *)&gprs_stat, 0, sizeof(s_gprs_stat));
 	gprs_stat.send_ok = gprs_stat.next_send = 1;
@@ -2602,7 +2613,12 @@ void StartAtTask(void *argument)
 		cmdsDone = true;
 		new_cmds = 0;
 	}
+	bool prf = true;
+	uint32_t wait_csq = 0;
+
+	uint32_t cmdDelay = 0;
 	wait_ack = get_tmr(2);
+
 
 	/* Infinite loop */
 
@@ -2624,10 +2640,11 @@ void StartAtTask(void *argument)
 			gprs_stat.init    = 0;
 			gprs_stat.connect = 0;
 			flags.imei_flag   = 0;
-			flags.auto_cmd = flags.inf = 0;
+			flags.auto_cmd    = flags.inf = 0;
 			ctn = 5;
 			evt_gsm = 0;
 			faza = 0;
+			prf = true;
 		}
 		//-----------------------------------------------------------
 
@@ -2640,7 +2657,7 @@ void StartAtTask(void *argument)
 							if (cmdsInd >= cmdsMax) {
 								cmdsInd = -1;
 								flags.auto_cmd = 0;
-								flags.gps_log_show = flags.i2c_log_show = 1;//flags.combo_log_show = 1;
+								flags.log_show = 1;
 							} else {
 								if (cmdsDone) {
 									if (check_hstmr(new_cmds)) {
@@ -2668,19 +2685,23 @@ void StartAtTask(void *argument)
 					osDelay(1);
 				}
 				cmdsDone = false;
-				if ( (strstr(buff, "AT+BTSPPSEND=")) || (strstr(buff, "AT+COPS")) ||
-								(strstr(buff, "AT+CIICR")) || (strstr(buff, "AT+CGACT=")) ) {
+				wait_ack = get_tmr(15);
+				if ( (strstr(buff, "AT+BTSPPSEND=")) ||
+						(strstr(buff, "AT+CIICR")) ||
+							(strstr(buff, "AT+CGACT=")) ||
+								(strstr(buff, "AT+COPS")) ) {
 					wait_ack = get_tmr(45);//WAIT ACK 45 SEC
 				} else {
 					if (!cmdsInd) wait_ack = get_tmr(5);
-							 else wait_ack = get_tmr(15);
 				}
 				if (strstr(buff, "AT+GSN")) flags.imei_flag = 1;
 				else
 				if (strstr(buff, "AT+CIFSR")) flags.local_ip_flag = 1;
 				else
 				if (strstr(buff, "AT+CIPSEND=")) gprs_stat.send_ok = 0;
+
 				if (cmdsInd == -1) wait_ack = 0;
+
 				faza = 2;
 			break;
 			case 2:
@@ -2727,11 +2748,7 @@ void StartAtTask(void *argument)
 					}
 				}
 				if (osMessageQueueGet(mqData, (void *)&aData, NULL, 10) == osOK) {
-#ifdef SET_JFES
-					if (!makeInfJsonString(&aData, msgGPRS, (sizeof(msgGPRS) - 3))) {
-#else
 					if (!makeInfString(&aData, msgGPRS, sizeof(msgGPRS) - 3)) {
-#endif
 						strcat(msgGPRS, "\r\n");
 						dl = strlen(msgGPRS);
 						if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
@@ -2740,10 +2757,7 @@ void StartAtTask(void *argument)
 							buff = cmd;
 							gprs_stat.next_send = 0;
 						} else {
-							//if (flags.combo_log_show) {
-								msgGPRS[dl - 2] = 0;
-								Report(true, "%s (%d)\r\n", msgGPRS, dl - 2);
-							//}
+							if (flags.log_show) Report(true, msgGPRS);
 						}
 					}
 				}
@@ -2754,13 +2768,20 @@ void StartAtTask(void *argument)
 				}
 				if (!yes) {
 					if (flags.inf) {
-						if (cmdsDone) {
+						if (cmdsDone && check_tmr(cmdDelay)) {
 							flags.inf = 0;
 							if (getVIO() && (onGNS)) {
 								yes = true;
 								buff = gpsINF;//AT+CGNSINF
 								rmc5 = 0;
+								wait_csq = get_tmr(wait_csq_def);
 							}
+						}
+					} else if (flags.csq) {
+						if (cmdsDone && getVIO()) {
+							flags.csq = 0;
+							yes = true;
+							buff = atCSQ;//AT+CSQ
 						}
 					}
 				}
@@ -2792,6 +2813,7 @@ void StartAtTask(void *argument)
 					gprs_stat.init = gprs_stat.connect = 0;
 					wait_ack = get_tmr(4);
 					faza = 4;
+					prf = true;
 				} else if (strlen(msgAT)) {
 					//
 					if (wait_ack_cli) wait_ack_cli = 0;
@@ -2824,12 +2846,15 @@ void StartAtTask(void *argument)
 							repeat = false;
 						}
 						if (repeat) tms = max_ms;
-					} else if (strstr(msgAT, "SMS Ready")) counter = 1;
-					else if (strstr(msgAT, "+CPIN: NOT INSERTED")) counter = 1;
-					else if ((uki = strstr(msgAT, "+CSQ: ")) != NULL) {//+CSQ: 15,0
+					} else if (strstr(msgAT, "SMS Ready")) {
+						counter = 1;
+					} else if (strstr(msgAT, "+CPIN: NOT INSERTED")) {
+						counter = 1;
+					} else if ((uki = strstr(msgAT, "+CSQ: ")) != NULL) {//+CSQ: 15,0
 						uki += 6;
 						if ((uk = strchr(uki, ',')) != NULL) {
-							dl = uk - uki; if (dl > 2) dl = 2;
+							dl = uk - uki;
+							if (dl > 2) dl = 2;
 							memcpy(cmd, uki, dl);
 							cmd[dl] = 0;
 							gsm_stat.rssi = atoi(cmd);
@@ -2837,6 +2862,13 @@ void StartAtTask(void *argument)
 							sprintf(toScr, "RSSI : -%u dBm  ", gsm_stat.rssi);
 							toDisplay((const char *)toScr, 1, 5, true);
 #endif
+							if (prf) {
+								prf = false;
+								flags.inf = 1;
+								cmdDelay = get_tmr(5);
+							} else {
+								wait_csq = get_tmr(wait_csq_def);
+							}
 						}
 					} else if ((uki = strstr(msgAT, "+CGNSPWR: ")) != NULL) {
 						if (*(uki + 10) == '1') onGNS = true;
@@ -2955,6 +2987,7 @@ void StartAtTask(void *argument)
 					cmdsDone = true;
 					new_cmds = get_hstmr(min_ms);
 					flags.auto_cmd = 1;
+					prf = true;
 				}
 			break;
 		}//switch (rx_faza)
@@ -2964,6 +2997,13 @@ void StartAtTask(void *argument)
 				wait_ack_cli = 0;
 				flags.disconnect = 1;
 				con_dis = false;
+			}
+		}
+
+		if (wait_csq && !flags.auto_cmd) {
+			if (check_tmr(wait_csq)) {
+				flags.csq = 1;
+				wait_csq = 0;
 			}
 		}
 		//---------------------------------------------------------------------------
@@ -2982,11 +3022,18 @@ void StartAtTask(void *argument)
 			Report(true, "GSM VIO is %u\r\n", getVIO());
 		}
 
+		if (flags.log_flag) {
+			flags.log_flag = 0;
+			Report(true, "LOG now is %s\r\n", logStat[flags.log_show]);
+		}
+
 		osDelay(1);
 
 	}
 
-	LOOP_FOREVER();
+	osDelay(100);
+	exit(0);
+	//LOOP_FOREVER();
 
   /* USER CODE END StartAtTask */
 }

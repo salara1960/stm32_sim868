@@ -96,9 +96,9 @@ typedef struct {
 
 #pragma pack(push,1)
 typedef struct {
-	unsigned gps_log_show:1;
-	unsigned i2c_log_show:1;
-	unsigned unused:1;//	unsigned combo_log_show:1;
+	unsigned log_flag:1;
+	unsigned log_show:1;
+	unsigned csq:1;
 	unsigned restart:1;
 	unsigned stop:1;
 	unsigned imei_flag:1;
@@ -197,6 +197,7 @@ extern SPI_HandleTypeDef *portSPI;
 #define wait_gps_def wait_sensor_def - 2 //>> 1
 #define wait_ack_cli_sec 10
 #define size_imei 15
+#define wait_csq_def wait_gps_def - 2
 
 #ifdef SET_JFES
 	#define MAX_UART_BUF 704//640//512//480//400//384//256

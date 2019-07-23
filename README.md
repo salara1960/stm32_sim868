@@ -51,13 +51,6 @@
   в USART3, например :
 
 ```
-000.00:00:07 | GSM_KEY set to 0
-000.00:00:08 | GSM_KEY set to 1
-RDY
-+CFUN: 1
-+CPIN: READY
-Call Ready
-SMS Ready
 AT
 OK
 AT+CMEE=0
@@ -68,66 +61,42 @@ OK
 AT+GSN
 868183030452648
 OK
-AT+CIMI
-250992116842498
+AT+CNMI=1,2,0,1,0
 OK
-AT+CMGF=1
-OK
-AT+CSCS="IRA"
+AT+SCLASS0=0;+CMGF=0
 OK
 AT+CGNSPWR=1
 OK
 AT+CGNSPWR?
 +CGNSPWR: 1
 OK
-+CGNSPWR: 1
-AT+CREG?
-+CREG: 0,2
-OK
-AT+CREG?
-+CREG: 0,2
-OK
 AT+CREG?
 +CREG: 0,1
 OK
 AT+CSQ
-+CSQ: 17,0
++CSQ: 15,0
 OK
-AT+CGDCONT=1,"IP","internet.beeline.ru"
-OK
-AT+CSTT="internet.beeline.ru","beeline","beeline"
-OK
-AT+CGACT=1,1
-OK
-AT+CIICR
-OK
-AT+CGATT?
-+CGATT: 1
-OK
-AT+CIFSR
-10.88.66.10
 
-CON:
-AT+CIPSTART="TCP","aaa.bbb.ccc,ddd",9192
+:CON
+AT+CIPSTART="TCP","aaa.bbb.ccc.ddd",9192
 OK
-000.00:01:04 | +++ CONNECTED +++
+000.00:00:09 | +++ CONNECTED +++
 CONNECT OK
+
 AT+CGNSINF
-+CGNSINF: 1,0,19800106000038.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
-000.00:01:05 | +CGNSINF: 1,0,19800106000038.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
 OK
-000.00:01:05 | BMP280: Press=759.72 mmHg, Temp=24.94 DegC; BH1750: Lux=685.00 lx
-AT+CIPSEND=495
+000.00:00:11 | +CGNSINF: 1,0,19800106000706.000,,,,0.00,0.0,0,,,,,,0,0,,,,,
+000.00:00:11 | BMP280: mmHg=761.61, DegC=26.25; BH1750: Lx=55.00
+AT+CIPSEND=511
 >{
         "InfSeqNum": 1,
         "MsgType": "+CGNSINF",
-        "devID": "868183030452648",
+        "DevID": "868183030452648",
         "DevName": "STM32_SIM868",
-        "SimNumber": "9062103497",
-        "DevTime": 65,
-        "FreeMem": 15672,
-        "UTC": "06.01.1980 00:00:38.000",
-        "Run": 1,
+        "SimNumber": "+79062100000",
+        "DevTime": 11,
+        "FreeMem": 18232,
+        "UTC": "06.01.1980 00:07:06.000",
         "Status": "Invaid",
         "Latitude": 0.000000,
         "Longitude": 0.000000,
@@ -140,13 +109,20 @@ AT+CIPSEND=495
         "SatGPSV": 0,
         "SatGNSSU": 0,
         "SatGLONASSV": 0,
-        "Press": 759.72,
-        "Temp": 24.94,
-        "Lux": 685.00
+        "dBHz": 0,
+        "Rssi": 15,
+        "Press": 761.61,
+        "Temp": 26.25,
+        "Lux": 55.00
 }
 
 SEND OK
 {"PackNumber":1,"InfSeqNum":1}
+
+:DIS
+AT+CIPCLOSE
+000.00:01:16 | --- DISCONNECTED ---
+CLOSE OK
 
 ```
 
