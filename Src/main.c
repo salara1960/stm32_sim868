@@ -88,7 +88,9 @@
 //const char *ver = "ver 3.1rc1";//21.07.2019 - minor changes : fixed bug in callback function (at_commands port of sim868)
 //const char *ver = "ver 3.1rc2";//22.07.2019 - minor changes : some changes in sms parser + change command format - :CMD (CMD=OFF,ON,...)
 //const char *ver = "ver 3.1rc3";//23.07.2019 - minor changes : add : log_show flag, RSSI to json, new commands - :LOG? , :LOG
-const char *ver = "ver 3.1rc4";//23.07.2019 - minor changes : show RSSI in dBm
+//const char *ver = "ver 3.1rc4";//23.07.2019 - minor changes : show RSSI in dBm
+//const char *ver = "ver 3.2rc1";//30.07.2019 - minor changes : add SMS_CONCAT mode - step 1
+const char *ver = "ver 3.2rc2";//31.07.2019 - minor changes : SMS_CONCAT mode done !
 
 
 /*
@@ -197,16 +199,16 @@ static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
-const uint8_t cmdsMax = 20-10;//19;//21;
+const uint8_t cmdsMax = 11;//19;//21;
 const char *cmds[] = {
 	"AT\r\n",
 	"AT+CMEE=0\r\n",
 	"AT+GMR\r\n",//get version of FW
 	"AT+GSN\r\n",//get IMEI
 	"AT+CNMI=1,2,0,1,0\r\n",
-	"AT+SCLASS0=0;+CMGF=0\r\n",
+	"AT+SCLASS0=0\r\n",
 //	"AT+CPMS=\"SM\",\"SM\",\"SM\"\r\n",
-//	"AT+CMGF=0\r\n",//;+CLIP=1\r\n",
+	"AT+CMGF=0\r\n",//;+CLIP=1\r\n",
 //	"AT+CIMI\r\n",//get IMCI
 //	"AT+CMGF=1\r\n",//text mode
 //	"AT+CSCS=\"IRA\"\r\n",
@@ -298,6 +300,8 @@ const int8_t dBmRSSI[max_rssi] = {
 
 
 #ifdef SET_SMS
+
+	static s_udhi_t sms_rec[maxSMSPart];
 
 	const char *smsType[max_smsType] = {
 		"+CMT: ",
@@ -523,7 +527,7 @@ int main(void)
   const osThreadAttr_t atTask_attributes = {
     .name = "atTask",
     .priority = (osPriority_t) osPriorityHigh,
-    .stack_size = 3072
+    .stack_size = 4096
   };
   atTaskHandle = osThreadNew(StartAtTask, NULL, &atTask_attributes);
 
@@ -1827,6 +1831,74 @@ void toDisplay(const char *st, uint8_t column, uint8_t line, bool clear)
 }
 //------------------------------------------------------------------------------------
 #ifdef SET_SMS
+
+//-----------------------------------------------------------------------------
+
+void InitSMSList()
+{
+	for (uint8_t i = 0; i < maxSMSPart; i++) memset((uint8_t *)&sms_rec[i], 0, sizeof(s_udhi_t));
+}
+//-----------------------------------------------------------------------------
+uint8_t PutSMSList(s_udhi_t *rec)
+{
+	if (!rec->part || rec->part > maxSMSPart) return 255;
+
+	memcpy((uint8_t *)&sms_rec[rec->part - 1], (uint8_t *)rec, sizeof(s_udhi_t));
+
+	return rec->part;
+}
+//-----------------------------------------------------------------------------
+uint8_t LookAllPart(uint8_t total)
+{
+uint8_t ret = 0;
+
+	if (total > maxSMSPart) return ret;
+
+	for (uint8_t i = 0; i < total; i++) if (sms_rec[i].part) ret++;
+
+	return ret;
+}
+//------------------------------------------------------------------------------
+uint8_t ConcatSMS(char *buf, uint8_t total, uint16_t *sn, uint16_t *sl)
+{
+
+	if (total > maxSMSPart) return 0;
+
+	uint16_t num = 0, len = 0;
+
+	for (uint8_t i = 0; i < total; i++) {
+		if (!sms_rec[i].len) sms_rec[i].len = sprintf(sms_rec[i].txt, "--- part %u ---", i + 1);
+		memcpy(buf + len, sms_rec[i].txt, sms_rec[i].len);
+		len += sms_rec[i].len;
+		if (!num) {
+			if (sms_rec[i].num) num = sms_rec[i].num;
+		}
+	}
+	*sn = num;
+	*sl = len;
+
+	return total;
+}
+//------------------------------------------------------------------------------
+uint8_t getSMSTotalCounter()
+{
+uint8_t ret = 0;
+
+	for (uint8_t i = 0; i < maxSMSPart; i++) {
+		if (sms_rec[i].total) {
+			ret = sms_rec[i].total;
+			break;
+		}
+	}
+
+	return ret;
+}
+//------------------------------------------------------------------------------
+uint16_t SwapBytes(uint16_t word)
+{
+	return ((word >> 8) | (word << 8));
+}
+//------------------------------------------------------------------------------
 int gsm7bit_to_text(int len_inbuff, uint8_t *inbuff, uint8_t *outbuff, int fl, uint8_t max_udl, uint8_t u_len)
 {
 int dl_ind = 0, i = 0, shift = 1, lb = max_udl;
@@ -1874,7 +1946,7 @@ uint8_t words[4] = {0};
     return (dl_ind);
 }
 //----------------------------------------------------------------------------------
-int conv_ucs2_text(uint8_t *buffer_txt, char *fromik)
+int conv_ucs2_text(uint8_t *buffer_txt, char *fromik, uint8_t *udhi5)
 {
 int ret = 0;
 int tt, tt1 = 0, tt_n, tt1_n, len, i = 0, j = 0, k = 0, shift, yes, it = 0, tzone, end_ind = 0;
@@ -2274,6 +2346,7 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 				udhi_4[4] = hextobin(udhi_str[b + 4], udhi_str[b + 5]); //part
 			}
 		}
+		memcpy(udhi5, udhi_4, 5);
 
 		if (with_udh) {
 			if (TSINPART) {
@@ -2596,6 +2669,13 @@ void StartAtTask(void *argument)
 
 #ifdef SET_SMS
 	char fromNum[lenFrom] = {0};
+	uint8_t abcd[5] = {0};
+	uint16_t sms_num;
+	uint16_t sms_len;
+	uint8_t sms_total;
+	s_udhi_t reco;
+	uint32_t wait_sms = 0;//wait_sms = get_tmr(wait_sms_time);
+	InitSMSList();
 #endif
 
 	char toScr[SCREEN_SIZE];
@@ -2964,8 +3044,31 @@ void StartAtTask(void *argument)
 								strcat(&SMS_text[j], msgAT);
 								if (i) Report(false, msgAT);
 								memset(fromNum, 0, sizeof(fromNum));
-								if (conv_ucs2_text((uint8_t *)SMS_text, fromNum) > 0) {
-									Report(true, "[SMS] from='%s' body:\r\n%s\r\n", fromNum, SMS_text);
+								sms_len = conv_ucs2_text((uint8_t *)SMS_text, fromNum, abcd);
+								if (sms_len > 0) {
+									Report(true, "[SMS] len=%u udhi=[%02X%02X%02X%02X%02X] from='%s' body:\r\n%.*s\r\n",
+											sms_len, abcd[0], abcd[1], abcd[2], abcd[3], abcd[4], fromNum, sms_len, SMS_text);
+									if ((abcd[0] == 1) && abcd[3]) {//with_UDHI and total > 0
+										memset((uint8_t *)&reco, 0, sizeof(s_udhi_t));
+										memcpy((uint8_t *)&reco, abcd, sizeof(abcd));
+										if (reco.total <= maxSMSPart) {
+											if (sms_len >= MaxBodyLen) sms_len = MaxBodyLen - 1;
+											memcpy(reco.txt, SMS_text, sms_len);
+											reco.len = sms_len;
+											if (PutSMSList(&reco) != 255) {
+												if (!wait_sms) wait_sms = get_tmr(wait_sms_time);//set timer for wait all patrs recv.
+												if (LookAllPart(reco.total) == reco.total) {//all parts are present -> concat begin
+													*SMS_text = '\0';   sms_num = 0;
+													if (ConcatSMS(SMS_text, reco.total, &sms_num, &sms_len) == reco.total) {
+														Report(true, "[SMS] concat message #%u with len %u done:\r\n%.*s\r\n",
+																     SwapBytes(sms_num), sms_len, sms_len, SMS_text);
+													}
+													InitSMSList();
+													wait_sms = 0;
+												}
+											}
+										}
+									}
 								}
 								*msgAT = '\0';
 							}
@@ -3016,7 +3119,22 @@ void StartAtTask(void *argument)
 				wait_csq = 0;
 			}
 		}
-		//---------------------------------------------------------------------------
+
+		//-------------------------   concat sms parts by timer   ------------------------
+		if (wait_sms) {
+			if (check_tmr(wait_sms)) {
+				wait_sms = 0;
+				sms_total = getSMSTotalCounter();
+				if (sms_total) {
+					*SMS_text = '\0';   sms_num = 0;
+					if (ConcatSMS(SMS_text, sms_total, &sms_num, &sms_len) == sms_total)
+						Report(true, "[SMS] concat message #%u with len %u by timeout:\r\n%.*s\r\n",
+								     SwapBytes(sms_num), sms_len, sms_len, SMS_text);
+				}
+				InitSMSList();
+			}
+		}
+		//--------------------------------------------------------------------------------
 
 		if (flags.srv) {
 			flags.srv = 0;

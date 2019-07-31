@@ -53,6 +53,7 @@ extern "C" {
 /* USER CODE BEGIN ET */
 
 #define MAX_QMSG 8
+#define MaxBodyLen 97
 
 #pragma pack(push,1)
 typedef struct {
@@ -167,6 +168,22 @@ typedef struct {
 } s_gsm_stat;
 #pragma pack(pop)
 
+//-------------------------------------------------------------------
+#ifdef SET_SMS
+
+#pragma pack(push,1)
+typedef struct s_udhi_t {
+	uint8_t tp;//0-обычная смс, 1-часть длинной смс, 255-квитанция
+	uint16_t num;//индекс (номер) смс
+	uint8_t total;//количество частей
+	uint8_t part;//номер части
+	uint16_t len;
+	char txt[MaxBodyLen];//97//[MaxBodyLen];//440 bytes
+} s_udhi_t;
+#pragma pack(pop)
+
+#endif
+//-------------------------------------------------------------------
 
 /* USER CODE END ET */
 
@@ -207,9 +224,11 @@ extern SPI_HandleTypeDef *portSPI;
 #endif
 
 #ifdef SET_SMS
-	#define SMS_BUF_LEN 512
+	#define maxSMSPart 8
+	#define SMS_BUF_LEN 640
 	#define cod_PDU_len 159 //137
 	#define lenFrom 32
+	#define wait_sms_time 60 * 5
 #endif
 
 /* USER CODE END EM */
