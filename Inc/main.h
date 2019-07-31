@@ -53,7 +53,7 @@ extern "C" {
 /* USER CODE BEGIN ET */
 
 #define MAX_QMSG 8
-#define MaxBodyLen 97
+#define MaxBodyLen 113
 
 #pragma pack(push,1)
 typedef struct {
@@ -178,7 +178,7 @@ typedef struct s_udhi_t {
 	uint8_t total;//количество частей
 	uint8_t part;//номер части
 	uint16_t len;
-	char txt[MaxBodyLen];//97//[MaxBodyLen];//440 bytes
+	char txt[MaxBodyLen];//113//[MaxBodyLen];//440 bytes
 } s_udhi_t;
 #pragma pack(pop)
 
