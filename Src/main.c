@@ -91,7 +91,8 @@
 //const char *ver = "ver 3.1rc4";//23.07.2019 - minor changes : show RSSI in dBm
 //const char *ver = "ver 3.2rc1";//30.07.2019 - minor changes : add SMS_CONCAT mode - step 1
 //const char *ver = "ver 3.2rc2";//31.07.2019 - minor changes : SMS_CONCAT mode done !
-const char *ver = "ver 3.2rc3";//31.07.2019 - minor changes : fixed bugs in calc. sms len
+//const char *ver = "ver 3.2rc3";//31.07.2019 - minor changes : fixed bugs in calc. sms len
+const char *ver = "ver 3.2rc4";//01.08.2019 - minor changes :  implemented sending to tcp-server received SMS
 
 
 /*
@@ -253,7 +254,7 @@ const char *logStat[] = {"OFF", "ON"};
 
 const uint8_t maxItems = 27;//30;
 const char *Items[] = {
-	"InfSeqNum",
+	"SeqNum",
 	"MsgType",
 	"DevID",
 	"DevName",
@@ -344,8 +345,10 @@ const int8_t dBmRSSI[max_rssi] = {
 	};
 
 	const char *eolin = "\r\n";
-	int TSINPART = 0;
+	int TSINPART = 0;//from, date/time are present in part 1 sms only, if sms without udhi -> from, date/time not present
 	char SMS_text[SMS_BUF_LEN];
+
+	char smsGPRS[SMS_BUF_LEN];
 
 #endif
 
@@ -1611,7 +1614,7 @@ int8_t ret = -1;
     uint8_t i = 0;
     jfes_value_t *obj = jfes_create_object_value(jconf);
     if (obj) {
-    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ++infCounter), Items[i++], 0);//"InfSeqNum"
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ++infCounter), Items[i++], 0);//"SeqNum"
     	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, "+CGNSINF", 0), Items[i++], 0);//"MsgType"
     	if (strlen(devID)) jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, devID, 0), Items[i++], 0);//"DevID"
     	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, dev_name, 0), Items[i++], 0);//"DevName"
@@ -1676,7 +1679,7 @@ int8_t ret = -1;
 
 	for (int i = 0; i < maxItems; i++) {
 		switch (i) {
-			case 0://"InfSeqNum",
+			case 0://"SeqNum",
 				len += sprintf(tmp, "\t\"%s\": %lu,\r\n", Items[i], ++infCounter);
 				break;
 			case 1://"MsgType",
@@ -2366,7 +2369,9 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 			} else {
 				if (udhi_4[4] < 2) end_ind = 0;
 			}
-		} else end_ind = 0;
+		} else {
+			if (TSINPART) end_ind = 0;
+		}
 
 		if (end_ind > SMS_BUF_LEN - 1) end_ind = 0;
 
@@ -2427,7 +2432,21 @@ int8_t ret = -1;
     uint8_t i = 0;
     jfes_value_t *obj = jfes_create_object_value(jconf);
     if (obj) {
-    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, "SMS", 0), "MsgType", 0);
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ++infCounter), Items[i++], 0);//"SeqNum"
+    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, "SMS", 0), Items[i++], 0);//"MsgType"
+    	if (strlen(devID)) jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, devID, 0), Items[i++], 0);//"DevID"
+    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, dev_name, 0), Items[i++], 0);//"DevName"
+    	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, sim_num, 0), Items[i++], 0);//"SimNumber"
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, get_secCounter()), Items[i++], 0);//"DevTime"
+    	i++;
+    	if (setDate) {
+    	#ifdef SET_RTC_TMR
+    	            uint32_t ep = getSecRTC(&hrtc);
+    	#else
+    	            uint32_t ep = get_extDate();
+    	#endif
+    	            jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, ep), Items[i++], 0);//"EpochTime"
+    	}
     	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, snum), "smsNumber", 0);
     	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, fnum, 0), "fromNumber", 0);
     	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, body, 0), "smsBody", 0);
@@ -2435,6 +2454,7 @@ int8_t ret = -1;
         jfes_size_t stx_size  = (jfes_size_t)max_len_buf;
         jfes_value_to_string(obj, buf, &stx_size, 1);
         *(buf + stx_size) = '\0';
+        strcat(buf, "\r\n");
 
         jfes_free_value(jconf, obj);
 
@@ -2446,12 +2466,25 @@ int8_t ret = -1;
     strcpy(buf, "{\r\n");
     int len = 4;
 
-    sprintf(buf+strlen(buf), "\t\"MsgType\":\"SMS\",\r\n");
-    sprintf(buf+strlen(buf), "\t\"smsNumber\":\"%u\",\r\n", snum);
-    sprintf(buf+strlen(buf), "\t\"fromNumber\":\"%s\",\r\n", fnum);
+    sprintf(buf+strlen(buf), "\t\"SeqNum\": %lu,\r\n", ++infCounter);
+    sprintf(buf+strlen(buf), "\t\"MsgType\": \"SMS\",\r\n");
+    sprintf(buf+strlen(buf), "\t\"DevID\": \"%s\",\r\n", devID);
+    sprintf(buf+strlen(buf), "\t\"DevName\": \"%s\",\r\n", dev_name);
+    sprintf(buf+strlen(buf), "\t\"SimNumber\": \"%s\",\r\n", sim_num);
+    sprintf(buf+strlen(buf), "\t\"DevTime\": %lu,\r\n", get_secCounter());
+    if (setDate) {
+    #ifdef SET_RTC_TMR
+    	uint32_t ep = getSecRTC(&hrtc);
+	#else
+    	uint32_t ep = get_extDate();
+	#endif
+    	sprintf(buf+strlen(buf), "\t\"EpochTime\": %lu,\r\n", ep);
+    }
+    sprintf(buf+strlen(buf), "\t\"smsNumber\": %u,\r\n", snum);
+    sprintf(buf+strlen(buf), "\t\"fromNumber\": \"%s\",\r\n", fnum);
     len += strlen(buf);
-    if ((len + body_len) > max_len_buf) body_len = max_len_buf - len;
-    sprintf(buf+strlen(buf), "\t\"smsBody\":\"%.*s\"\r\n}", body_len, body);
+    if ((len + body_len + 16) > max_len_buf) body_len = max_len_buf - len - 16;
+    sprintf(buf+strlen(buf), "\t\"smsBody\": \"%.*s\"\r\n}\r\n", body_len, body);
 
     ret = 0;
 
@@ -2718,6 +2751,7 @@ void StartAtTask(void *argument)
 	gprs_stat.send_ok = gprs_stat.next_send = 1;
 
 	bool yes = false;
+	int8_t who = -1;
 	msgGPRS[0] = 0;
 	char cmd[64];
 	int dl, i, j, k;
@@ -2729,6 +2763,7 @@ void StartAtTask(void *argument)
 	uint16_t sms_len;
 	uint8_t sms_total;
 	s_udhi_t reco;
+	bool sms_ready = false;
 	uint32_t wait_sms = 0;//wait_sms = get_tmr(wait_sms_time);
 	InitSMSList();
 #endif
@@ -2895,21 +2930,40 @@ void StartAtTask(void *argument)
 				if (osMessageQueueGet(mqData, (void *)&aData, NULL, 10) == osOK) {
 					if (!makeInfString(&aData, msgGPRS, sizeof(msgGPRS) - 3)) {
 						strcat(msgGPRS, "\r\n");
-						dl = strlen(msgGPRS);
 						if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
-							sprintf(cmd, "AT+CIPSEND=%d\r\n", dl);
+							sprintf(cmd, "AT+CIPSEND=%d\r\n", strlen(msgGPRS));
 							yes = true;
 							buff = cmd;
+							who = 0;
 							gprs_stat.next_send = 0;
-						} else {
-							if (flags.log_show) Report(true, msgGPRS);
+						} else if (flags.log_show) Report(true, msgGPRS);
+					}
+				}
+#ifdef SET_SMS
+				else {
+
+					if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
+						if (sms_ready) {
+							sms_ready = false;
+							sprintf(cmd, "AT+CIPSEND=%d\r\n", strlen(smsGPRS));
+							yes = true;
+							buff = cmd;
+							who = 1;
+							gprs_stat.next_send = 0;
 						}
 					}
 				}
+#endif
 				if (gprs_stat.prompt && gprs_stat.connect) {
 					yes = true;
+#ifdef SET_SMS
+					if (!who) buff = msgGPRS;
+					else if (who == 1) buff = smsGPRS;
+#else
 					buff = msgGPRS;
+#endif
 					gprs_stat.prompt = 0;
+					who = -1;
 				}
 				if (!yes) {
 					if (flags.inf) {
@@ -3118,11 +3172,12 @@ void StartAtTask(void *argument)
 												if (LookAllPart(reco.total) == reco.total) {//all parts are present -> concat begin
 													*SMS_text = '\0';
 													if (ConcatSMS(SMS_text, reco.total, &sms_num, &sms_len) == reco.total) {
-														Report(true, "[SMS] concat message #%u with len %u done:\r\n%.*s\r\n",
+														Report(true, "[SMS] Concat message #%u with len %u done:\r\n%.*s\r\n",
 																     sms_num, sms_len, sms_len, SMS_text);
 														*msgGPRS = '\0';
-														if (!makeSMSString(SMS_text, sms_len, fromNum, sms_num, msgGPRS, sizeof(msgGPRS) - 3)) {
-															Report(true, "%s\r\n", msgGPRS);
+														if (!makeSMSString(SMS_text, sms_len, fromNum, sms_num, smsGPRS, sizeof(smsGPRS) - 1)) {
+															if (!gprs_stat.connect && flags.log_show) Report(true, smsGPRS);
+															sms_ready = true;
 														}
 													}
 													InitSMSList();
@@ -3132,8 +3187,9 @@ void StartAtTask(void *argument)
 										}
 									} else {//without_UDHI
 										*msgGPRS = '\0';
-										if (!makeSMSString(SMS_text, sms_len, fromNum, sms_num, msgGPRS, sizeof(msgGPRS) - 3)) {
-											Report(true, "%s\r\n", msgGPRS);
+										if (!makeSMSString(SMS_text, sms_len, fromNum, sms_num, smsGPRS, sizeof(smsGPRS) - 1)) {
+											if (!gprs_stat.connect && flags.log_show) Report(true, smsGPRS);
+											sms_ready = true;
 										}
 									}
 									//
@@ -3188,6 +3244,7 @@ void StartAtTask(void *argument)
 			}
 		}
 
+#ifdef SET_SMS
 		//-------------------------   concat sms parts by timer   ------------------------
 		if (wait_sms) {
 			if (check_tmr(wait_sms)) {
@@ -3196,11 +3253,12 @@ void StartAtTask(void *argument)
 				if (sms_total) {
 					*SMS_text = '\0';   sms_num = 0;
 					if (ConcatSMS(SMS_text, sms_total, &sms_num, &sms_len) == sms_total) {
-						Report(true, "[SMS] concat message #%u with len %u by timeout:\r\n%.*s\r\n",
+						Report(true, "[SMS] Concat message #%u with len %u by timeout:\r\n%.*s\r\n",
 								     sms_num, sms_len, sms_len, SMS_text);
 						*msgGPRS = '\0';
-						if (!makeSMSString(SMS_text, sms_len, fromNum, sms_num, msgGPRS, sizeof(msgGPRS) - 3)) {
-							Report(true, "%s\r\n", msgGPRS);
+						if (!makeSMSString(SMS_text, sms_len, fromNum, sms_num, smsGPRS, sizeof(smsGPRS) - 1)) {
+							if (!gprs_stat.connect && flags.log_show) Report(true, smsGPRS);
+							sms_ready = true;
 						}
 					}
 				}
@@ -3208,6 +3266,7 @@ void StartAtTask(void *argument)
 			}
 		}
 		//--------------------------------------------------------------------------------
+#endif
 
 		if (flags.srv) {
 			flags.srv = 0;
