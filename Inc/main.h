@@ -1,4 +1,5 @@
 /* USER CODE BEGIN Header */
+//char *buff = (char *)pvPortMalloc(len); vPortFree(buff);
 /**
   ******************************************************************************
   * @file           : main.h
@@ -52,8 +53,12 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
+
+#undef SET_STATIC_MEM_LOG	//use dynamic memmory
+
+
 #define MAX_QMSG 8
-#define MaxBodyLen 113
+
 
 #pragma pack(push,1)
 typedef struct {
@@ -171,6 +176,20 @@ typedef struct {
 //-------------------------------------------------------------------
 #ifdef SET_SMS
 
+#define SET_SMSQ_STATIC
+//#define SET_CALLOC_MEM
+//#define SET_MALLOC_MEM
+
+#define MAX_QSMS 4
+#define maxSMSPart 8
+#define MaxBodyLen 113
+#define SMS_BUF_LEN 560
+
+#define cod_PDU_len 159 //137
+#define lenFrom 32
+#define wait_sms_time 60 * 3
+#define max_smsType 3
+
 #pragma pack(push,1)
 typedef struct s_udhi_t {
 	uint8_t tp;//0-обычная смс, 1-часть длинной смс, 255-квитанция
@@ -180,6 +199,25 @@ typedef struct s_udhi_t {
 	uint16_t len;
 	char txt[MaxBodyLen];//113//[MaxBodyLen];//440 bytes
 } s_udhi_t;
+#pragma pack(pop)
+
+#pragma pack(push,1)
+typedef struct q_rec_t {
+	int8_t id;
+	#ifdef SET_SMSQ_STATIC
+		char adr[SMS_BUF_LEN];
+	#else
+		char *adr;
+	#endif
+} q_rec_t;
+#pragma pack(pop)
+
+#pragma pack(push,1)
+typedef struct s_smsq_t {
+	uint8_t put;
+	uint8_t get;
+	q_rec_t sms[MAX_QSMS];
+} s_smsq_t;
 #pragma pack(pop)
 
 #endif
@@ -218,18 +256,11 @@ extern SPI_HandleTypeDef *portSPI;
 #define max_rssi 32
 
 #ifdef SET_JFES
-	#define MAX_UART_BUF 704//640//512//480//400//384//256
+	#define MAX_UART_BUF 640//704//640//512//480//400//384//256
 #else
-	#define MAX_UART_BUF 640//512//480//400//384//256
+	#define MAX_UART_BUF 600//512//480//400//384//256
 #endif
 
-#ifdef SET_SMS
-	#define maxSMSPart 8
-	#define SMS_BUF_LEN 640
-	#define cod_PDU_len 159 //137
-	#define lenFrom 32
-	#define wait_sms_time 60 * 5
-#endif
 
 /* USER CODE END EM */
 
@@ -300,9 +331,6 @@ extern void Leds(bool act, uint16_t Pin);
 	#define CS_OLED_DESELECT() HAL_GPIO_WritePin(OLED_CS_GPIO_Port, OLED_CS_Pin, GPIO_PIN_SET)
 #endif
 
-#ifdef SET_SMS
-	#define max_smsType 3
-#endif
 
 /* USER CODE END Private defines */
 

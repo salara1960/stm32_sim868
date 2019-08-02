@@ -92,7 +92,9 @@
 //const char *ver = "ver 3.2rc1";//30.07.2019 - minor changes : add SMS_CONCAT mode - step 1
 //const char *ver = "ver 3.2rc2";//31.07.2019 - minor changes : SMS_CONCAT mode done !
 //const char *ver = "ver 3.2rc3";//31.07.2019 - minor changes : fixed bugs in calc. sms len
-const char *ver = "ver 3.2rc4";//01.08.2019 - minor changes :  implemented sending to tcp-server received SMS
+//const char *ver = "ver 3.2rc4";//01.08.2019 - minor changes :  implemented sending to tcp-server received SMS
+//const char *ver = "ver 3.2rc5";//01.08.2019 - minor changes :  add queue for SMS
+const char *ver = "ver 3.2rc6";//02.08.2019 - minor changes : add static body mode in SMS queue, remove link option -specs=nosys.specs ! <- now calloc working !!!
 
 
 /*
@@ -100,6 +102,10 @@ post-build steps command:
 arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtifactFileBaseName}.bin" && ls -la | grep "${BuildArtifactFileBaseName}.*"
 
 LINK:
+-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -u_printf_float -T"../STM32F407VGTx_FLASH.ld" -Wl,-Map=output.map -Wl,--gc-sections -lm
+
+-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -u_printf_float -specs=nosys.specs -T"../STM32F407VGTx_FLASH.ld" -Wl,-Map=output.map -Wl,--gc-sections -lm
+
 -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -specs=nosys.specs -specs=nano.specs -u_printf_float -T"../STM32F407VGTx_FLASH.ld" -Wl,-Map=output.map -Wl,--gc-sections -lm
 -specs=nano.specs
 */
@@ -304,6 +310,7 @@ const int8_t dBmRSSI[max_rssi] = {
 #ifdef SET_SMS
 
 	static s_udhi_t sms_rec[maxSMSPart];
+	static s_smsq_t smsq;
 
 	const char *smsType[max_smsType] = {
 		"+CMT: ",
@@ -531,7 +538,7 @@ int main(void)
   const osThreadAttr_t atTask_attributes = {
     .name = "atTask",
     .priority = (osPriority_t) osPriorityHigh,
-    .stack_size = 4096
+    .stack_size = 8192
   };
   atTaskHandle = osThreadNew(StartAtTask, NULL, &atTask_attributes);
 
@@ -1217,9 +1224,12 @@ void Report(bool addTime, const char *fmt, ...)
 HAL_StatusTypeDef er = HAL_OK;
 size_t len = MAX_UART_BUF;
 
-	char *buff = (char *)pvPortMalloc(len);
-	//char *buff = (char *)calloc(1, len);
+#ifndef SET_STATIC_MEM_LOG
+	char *buff = (char *)pvPortMalloc(len);//char *buff = (char *)calloc(1, len);
 	if (buff) {
+#else
+	char buff[MAX_UART_BUF];
+#endif
 		int dl = 0, sz;
 		va_list args;
 
@@ -1248,10 +1258,10 @@ size_t len = MAX_UART_BUF;
 		} else er = HAL_ERROR;
 		//
 		va_end(args);
-
-		vPortFree(buff);
-		//free(buff);
+#ifndef SET_STATIC_MEM_LOG
+		vPortFree(buff);//free(buff);
 	} else er = HAL_ERROR;
+#endif
 
 	if (er != HAL_OK) Leds(true, LED_ERROR);
 }
@@ -1678,6 +1688,7 @@ int8_t ret = -1;
 	strcpy(buf, "{\r\n");
 
 	for (int i = 0; i < maxItems; i++) {
+		tmp[0] = '\0';
 		switch (i) {
 			case 0://"SeqNum",
 				len += sprintf(tmp, "\t\"%s\": %lu,\r\n", Items[i], ++infCounter);
@@ -1744,13 +1755,13 @@ int8_t ret = -1;
         		break;
 */
 			case 15://"HDOP",
-				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.HDOP);
+				//len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.HDOP);
 				break;
 			case 16://"PDOP",
-				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.PDOP);
+				//len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.PDOP);
 				break;
 			case 17://"VDOP",
-				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.VDOP);
+				//len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.VDOP);
 				break;
 			case 18://"SatGPSV",
 				len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], data->inf.GPSsatV);
@@ -1762,7 +1773,7 @@ int8_t ret = -1;
 				len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], data->inf.GLONASSsatV);
 				break;
 			case 21://"dBHz",
-				len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], data->inf.dBHz);
+				//len += sprintf(tmp, "\t\"%s\": %u,\r\n", Items[i], data->inf.dBHz);
 				break;
 /*
 			case 22://"HPA",
@@ -1834,8 +1845,31 @@ void toDisplay(const char *st, uint8_t column, uint8_t line, bool clear)
 
 }
 //------------------------------------------------------------------------------------
+
 #ifdef SET_SMS
 
+//-----------------------------------------------------------------------------
+void *getMem(size_t len)
+{
+#ifdef SET_CALLOC_MEM
+		return (calloc(len, 1));
+#else
+	#ifdef SET_MALLOC_MEM
+		return (malloc(len));
+	#else
+		return (pvPortMalloc(len));
+	#endif
+#endif
+}
+//-----------------------------------------------------------------------------
+void freeMem(void *mem)
+{
+#if defined(SET_CALLOC_MEM) || defined(SET_MALLOC_MEM)
+		free(mem);
+#else
+		vPortFree(mem);
+#endif
+}
 //-----------------------------------------------------------------------------
 
 void InitSMSList()
@@ -1962,7 +1996,7 @@ uint8_t words[4] = {0};
     return (dl_ind);
 }
 //----------------------------------------------------------------------------------
-int conv_ucs2_text(uint8_t *buffer_txt, char *fromik, uint8_t *udhi5)
+int conv_ucs2_text(uint8_t *buffer_txt, char *fromik, uint8_t *udhi5, uint8_t prn)
 {
 int ret = 0;
 int tt, tt1 = 0, tt_n, tt1_n, len, i = 0, j = 0, k = 0, shift, yes, it = 0, tzone, end_ind = 0;
@@ -2089,7 +2123,7 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 			if (with_udh) strcat(stx," With_UDHI");
 					 else strcat(stx," Without_UDHI");
 			//sprintf(stx+strlen(stx),"\r\nPDU:\r\n%s\r\n", uk_start);
-			Report(false, "%s\r\n", stx);
+			if (prn) Report(false, "%s\r\n", stx);
 
 			ps1 = ps3 = uk_start;
 
@@ -2245,7 +2279,7 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 			dl = hextobin(words[0], words[1]); //длинна тела сообщения
 			user_data_l = user_data_len = dl;
 			sprintf(stx+strlen(stx),", UDL=%d[%s]\r\n", user_data_len, words);
-			Report(false, stx);
+			if (prn) Report(false, stx);
 
 			tt += 2; //индекс на начало текста сообщения или на начало udhi
 		}//if (its_ok)
@@ -2380,7 +2414,7 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 		//memset(buffer_txt, 0, SMS_BUF_LEN);
 		memcpy(buffer_txt, &buffer_temp[end_ind], it);
 
-		if (with_udh) Report(false,"UDH(%d): [%s]\r\n", udhi_len, udhi_str);
+		if (with_udh && prn) Report(false,"UDH(%d): [%s]\r\n", udhi_len, udhi_str);
 
 		ret = tt1 - end_ind;//strlen((char *)buffer_txt);//dl_ind;
 
@@ -2424,9 +2458,10 @@ int ucs2_to_text(char *buf_in, uint8_t *buf_out)
     return dl_ind;
 }
 //-----------------------------------------------------------------------------------------
-int8_t makeSMSString(const char *body, uint16_t body_len, char *fnum, uint16_t snum, char *buf, int max_len_buf)
+int8_t makeSMSString(const char *body, uint16_t *blen, char *fnum, uint16_t snum, char *buf, int max_len_buf)
 {
 int8_t ret = -1;
+uint16_t body_len = *blen;
 
 #ifdef SET_JFES
     uint8_t i = 0;
@@ -2438,7 +2473,7 @@ int8_t ret = -1;
     	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, dev_name, 0), Items[i++], 0);//"DevName"
     	jfes_set_object_property(jconf, obj, jfes_create_string_value(jconf, sim_num, 0), Items[i++], 0);//"SimNumber"
     	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, get_secCounter()), Items[i++], 0);//"DevTime"
-    	i++;
+    	jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, xPortGetFreeHeapSize()), Items[i++], 0);//"FreeMem"
     	if (setDate) {
     	#ifdef SET_RTC_TMR
     	            uint32_t ep = getSecRTC(&hrtc);
@@ -2472,6 +2507,7 @@ int8_t ret = -1;
     sprintf(buf+strlen(buf), "\t\"DevName\": \"%s\",\r\n", dev_name);
     sprintf(buf+strlen(buf), "\t\"SimNumber\": \"%s\",\r\n", sim_num);
     sprintf(buf+strlen(buf), "\t\"DevTime\": %lu,\r\n", get_secCounter());
+    sprintf(buf+strlen(buf), "\t\"FreeMem\": %u,\r\n",xPortGetFreeHeapSize());
     if (setDate) {
     #ifdef SET_RTC_TMR
     	uint32_t ep = getSecRTC(&hrtc);
@@ -2490,9 +2526,129 @@ int8_t ret = -1;
 
 #endif
 
+    *blen = (uint16_t)strlen(buf);
+
     return ret;
 }
+//-----------------------------------------------------------------------------
+void initSMSQ(s_smsq_t *sq)//s_smsq_t smsq;
+{
+	sq->put = sq->get = 0;
+	for (uint8_t i = 0; i < MAX_QSMS; i++) {
+		sq->sms[i].id = i;
+#ifdef SET_SMSQ_STATIC
+		sq->sms[i].adr[0] = '\0';
+#else
+		sq->sms[i].adr = NULL;
+#endif
+	}
+}
+//-----------------------------------------------------------------------------
+void clearSMSQ(s_smsq_t *sq)
+{
+	sq->put = sq->get = 0;
+	for (uint8_t i = 0; i < MAX_QSMS; i++) {
+		sq->sms[i].id = i;
+#ifdef SET_SMSQ_STATIC
+		sq->sms[i].adr[0] = '\0';
+#else
+		freeMem(sq->sms[i].adr);
+		sq->sms[i].adr = NULL;
+#endif
+	}
+}
+//-----------------------------------------------------------------------------
+int8_t putSMSQ(char *adr, s_smsq_t *sq)
+{
+int8_t ret = -1;
+
+#ifdef SET_SMSQ_STATIC
+	if (!strlen(sq->sms[sq->put].adr)) {
+		int len = strlen(adr);
+		if (len >= SMS_BUF_LEN) len = SMS_BUF_LEN - 1;
+		memcpy((char *)&sq->sms[sq->put].adr[0], adr, len);
+		sq->sms[sq->put].adr[len] = '\0';
+#else
+	if (sq->sms[sq->put].adr == NULL) {
+		sq->sms[sq->put].adr = adr;
+#endif
+		ret = sq->sms[sq->put].id;
+		sq->put++; if (sq->put >= MAX_QSMS) sq->put = 0;
+	}
+
+	return ret;
+}
+//-----------------------------------------------------------------------------
+int8_t getSMSQ(char *dat, s_smsq_t *sq)
+{
+int8_t ret = -1;
+int len = 0;
+
+#ifdef SET_SMSQ_STATIC
+	len = strlen(sq->sms[sq->get].adr);
+	if (len) {
+		ret = sq->sms[sq->get].id;
+		memcpy(dat, sq->sms[sq->get].adr, len);
+		sq->sms[sq->get].adr[0] = '\0';
+	}
+#else
+	if (sq->sms[sq->get].adr != NULL) {
+		len = strlen(sq->sms[sq->get].adr);
+		ret = sq->sms[sq->get].id;
+		memcpy(dat, sq->sms[sq->get].adr, len);
+		freeMem(sq->sms[sq->get].adr);
+		sq->sms[sq->get].adr = NULL;
+	}
+#endif
+
+	if (ret >= 0) {
+		*(dat + len) = '\0';
+		sq->get++;
+		if (sq->get >= MAX_QSMS) sq->get = 0;
+	}
+
+	return ret;
+}
 //------------------------------------------------------------------------------------------
+int8_t addToSMSQ(char *txt, uint16_t txt_len, s_smsq_t *sq)
+{
+int8_t nrec = -1;
+
+#ifdef SET_SMSQ_STATIC
+	if (txt_len >= SMS_BUF_LEN) {
+		txt_len = SMS_BUF_LEN - 1;
+		txt[txt_len] = '\0';
+	}
+	if ((nrec = putSMSQ(txt, sq)) >= 0) {
+		Report(true, "[%s] : add sms_record OK (id=%d len=%d)\r\n", __func__, nrec, txt_len);
+	} else {
+		Report(true, "[%s] : add sms_record error (len=%d)\r\n", __func__, txt_len);
+	}
+#else
+	int need_len = txt_len + 1;
+	char *rc = (char *)getMem((size_t)need_len);
+	if (rc) {
+		int got_len = strlen(rc);
+		if (got_len >= need_len) {
+			memcpy(rc, txt, txt_len);
+			*(rc + txt_len) = '\0';
+			if ((nrec = putSMSQ(rc, sq)) >= 0) {
+				Report(true, "[%s] : add sms_record OK (id=%d len=%d/%d)\r\n", __func__, nrec, need_len, got_len);
+		    } else {
+				Report(true, "[%s] : add sms_record error (len=%d/%d)\r\n", __func__, need_len, got_len);
+				freeMem(rc);
+			}
+		} else {
+			Report(true, "[%s] : error memory size %d != %d\r\n", __func__, need_len, got_len);
+			freeMem(rc);
+		}
+	} else Report(true, "[%s] : error get memory (len=%d)\r\n", __func__, need_len);
+#endif
+
+	return nrec;
+}
+//------------------------------------------------------------------------------------------
+
 #endif
 
 //-----------------------------------------------------------------------------------------
@@ -2714,6 +2870,7 @@ void StartSensTask(void *argument)
 	}
 
 	osDelay(100);
+
 	exit(0);
 	//LOOP_FOREVER();
 
@@ -2755,16 +2912,19 @@ void StartAtTask(void *argument)
 	msgGPRS[0] = 0;
 	char cmd[64];
 	int dl, i, j, k;
+	uint16_t gprs_len;
 
 #ifdef SET_SMS
+	initSMSQ(&smsq);//char *rc = (char *)pvPortMalloc(len); vPortFree(rc);
+					//char *rc = (char *)calloc(1, len); free(rc);
 	char fromNum[lenFrom] = {0};
 	uint8_t abcd[5] = {0};
 	uint16_t sms_num;
 	uint16_t sms_len;
 	uint8_t sms_total;
+	int8_t nrec;
 	s_udhi_t reco;
-	bool sms_ready = false;
-	uint32_t wait_sms = 0;//wait_sms = get_tmr(wait_sms_time);
+	uint32_t wait_sms = 0;
 	InitSMSList();
 #endif
 
@@ -2930,28 +3090,27 @@ void StartAtTask(void *argument)
 				if (osMessageQueueGet(mqData, (void *)&aData, NULL, 10) == osOK) {
 					if (!makeInfString(&aData, msgGPRS, sizeof(msgGPRS) - 3)) {
 						strcat(msgGPRS, "\r\n");
+						gprs_len = strlen(msgGPRS);
 						if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
-							sprintf(cmd, "AT+CIPSEND=%d\r\n", strlen(msgGPRS));
+							sprintf(cmd, "AT+CIPSEND=%d\r\n", gprs_len);
 							yes = true;
 							buff = cmd;
 							who = 0;
 							gprs_stat.next_send = 0;
-						} else if (flags.log_show) Report(true, msgGPRS);
+						} else if (flags.log_show) Report(true, "%s(%u)\r\n", msgGPRS, gprs_len);
 					}
 				}
 #ifdef SET_SMS
-				else {
-
+				else if ((nrec = getSMSQ(smsGPRS, &smsq)) >= 0) {
+					sms_len = strlen(smsGPRS);
+					Report(true, "[getSMSQ] : get sms_record OK (id=%d len=%u)\r\n", nrec , sms_len);
 					if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
-						if (sms_ready) {
-							sms_ready = false;
-							sprintf(cmd, "AT+CIPSEND=%d\r\n", strlen(smsGPRS));
-							yes = true;
-							buff = cmd;
-							who = 1;
-							gprs_stat.next_send = 0;
-						}
-					}
+						sprintf(cmd, "AT+CIPSEND=%d\r\n", sms_len);
+						yes = true;
+						buff = cmd;
+						who = 1;
+						gprs_stat.next_send = 0;
+					} else if (flags.log_show) Report(true, "%s(%u)\r\n", smsGPRS, sms_len);
 				}
 #endif
 				if (gprs_stat.prompt && gprs_stat.connect) {
@@ -3155,7 +3314,7 @@ void StartAtTask(void *argument)
 								memset(abcd, 0, sizeof(abcd));
 								memset(fromNum, 0, sizeof(fromNum));
 								sms_num = 0;
-								sms_len = conv_ucs2_text((uint8_t *)SMS_text, fromNum, abcd);
+								sms_len = conv_ucs2_text((uint8_t *)SMS_text, fromNum, abcd, 0);
 								if (sms_len > 0) {
 									Report(true, "[SMS] len=%u udhi=[%02X%02X%02X%02X%02X] from='%s' body:\r\n%.*s\r\n",
 											sms_len, abcd[0], abcd[1], abcd[2], abcd[3], abcd[4], fromNum, sms_len, SMS_text);
@@ -3172,12 +3331,15 @@ void StartAtTask(void *argument)
 												if (LookAllPart(reco.total) == reco.total) {//all parts are present -> concat begin
 													*SMS_text = '\0';
 													if (ConcatSMS(SMS_text, reco.total, &sms_num, &sms_len) == reco.total) {
-														Report(true, "[SMS] Concat message #%u with len %u done:\r\n%.*s\r\n",
-																     sms_num, sms_len, sms_len, SMS_text);
+														Report(true, "[SMS] Concat message #%u (len=%u parts=%u) done:\r\n%.*s\r\n",
+																     sms_num, sms_len, reco.total, sms_len, SMS_text);
 														*msgGPRS = '\0';
-														if (!makeSMSString(SMS_text, sms_len, fromNum, sms_num, smsGPRS, sizeof(smsGPRS) - 1)) {
-															if (!gprs_stat.connect && flags.log_show) Report(true, smsGPRS);
-															sms_ready = true;
+														if (!makeSMSString(SMS_text, &sms_len, fromNum, sms_num, smsGPRS, sizeof(smsGPRS) - 1)) {
+															//
+															if (addToSMSQ(smsGPRS, sms_len, &smsq) < 0) {
+																if (flags.log_show) Report(true, smsGPRS);
+															}
+															//
 														}
 													}
 													InitSMSList();
@@ -3187,9 +3349,13 @@ void StartAtTask(void *argument)
 										}
 									} else {//without_UDHI
 										*msgGPRS = '\0';
-										if (!makeSMSString(SMS_text, sms_len, fromNum, sms_num, smsGPRS, sizeof(smsGPRS) - 1)) {
-											if (!gprs_stat.connect && flags.log_show) Report(true, smsGPRS);
-											sms_ready = true;
+										if (!makeSMSString(SMS_text, &sms_len, fromNum, sms_num, smsGPRS, sizeof(smsGPRS) - 1)) {
+
+											//
+											if (addToSMSQ(smsGPRS, sms_len, &smsq) < 0) {
+												if (flags.log_show) Report(true, smsGPRS);
+											}
+											//
 										}
 									}
 									//
@@ -3256,9 +3422,12 @@ void StartAtTask(void *argument)
 						Report(true, "[SMS] Concat message #%u with len %u by timeout:\r\n%.*s\r\n",
 								     sms_num, sms_len, sms_len, SMS_text);
 						*msgGPRS = '\0';
-						if (!makeSMSString(SMS_text, sms_len, fromNum, sms_num, smsGPRS, sizeof(smsGPRS) - 1)) {
-							if (!gprs_stat.connect && flags.log_show) Report(true, smsGPRS);
-							sms_ready = true;
+						if (!makeSMSString(SMS_text, &sms_len, fromNum, sms_num, smsGPRS, sizeof(smsGPRS) - 1)) {
+							//
+							if (addToSMSQ(smsGPRS, sms_len, &smsq) < 0) {
+								if (flags.log_show) Report(true, smsGPRS);
+							}
+							//
 						}
 					}
 				}
