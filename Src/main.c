@@ -94,7 +94,8 @@
 //const char *ver = "ver 3.2rc3";//31.07.2019 - minor changes : fixed bugs in calc. sms len
 //const char *ver = "ver 3.2rc4";//01.08.2019 - minor changes :  implemented sending to tcp-server received SMS
 //const char *ver = "ver 3.2rc5";//01.08.2019 - minor changes :  add queue for SMS
-const char *ver = "ver 3.2rc6";//02.08.2019 - minor changes : add static body mode in SMS queue, remove link option -specs=nosys.specs ! <- now calloc working !!!
+//const char *ver = "ver 3.2rc6";//02.08.2019 - minor changes : add static body mode in SMS queue, remove link option -specs=nosys.specs ! <- now calloc working !!!
+const char *ver = "ver 3.3rc1";//03.08.2019 - minor changes : set HEAP_SIZE up to 32K, use JFES library, fixed memory leak bug
 
 
 /*
@@ -355,7 +356,7 @@ const int8_t dBmRSSI[max_rssi] = {
 	int TSINPART = 0;//from, date/time are present in part 1 sms only, if sms without udhi -> from, date/time not present
 	char SMS_text[SMS_BUF_LEN];
 
-	char smsGPRS[SMS_BUF_LEN];
+	char smsGPRS[MAX_UART_BUF];
 
 #endif
 
@@ -372,9 +373,9 @@ static void MX_UART4_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_SPI3_Init(void);
 static void MX_RTC_Init(void);
-void StartDefTask(void *argument);
-void StartSensTask(void *argument);
-void StartAtTask(void *argument);
+void StartDefTask(void *argument); // for v2
+void StartSensTask(void *argument); // for v2
+void StartAtTask(void *argument); // for v2
 
 /* USER CODE BEGIN PFP */
 
@@ -538,7 +539,7 @@ int main(void)
   const osThreadAttr_t atTask_attributes = {
     .name = "atTask",
     .priority = (osPriority_t) osPriorityHigh,
-    .stack_size = 8192
+    .stack_size = 6144
   };
   atTaskHandle = osThreadNew(StartAtTask, NULL, &atTask_attributes);
 
@@ -919,17 +920,11 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, OLED_CS_Pin|OLED_DC_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : USER_IN_Pin */
-  GPIO_InitStruct.Pin = USER_IN_Pin;
+  /*Configure GPIO pins : USER_IN_Pin GSM_STATUS_Pin */
+  GPIO_InitStruct.Pin = USER_IN_Pin|GSM_STATUS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(USER_IN_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : GSM_STATUS_Pin */
-  GPIO_InitStruct.Pin = GSM_STATUS_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(GSM_STATUS_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : GSM_KEY_Pin */
   GPIO_InitStruct.Pin = GSM_KEY_Pin;
@@ -1351,11 +1346,17 @@ void getAT()
 				char *buff = (char *)calloc(1, len + 1);
 				if (buff) {
 					int8_t sta;
-					memcpy(buff, AtRxBuf, len);
-					if (strstr(AtRxBuf, "+CGNSINF:")) {
-						sta = putQ(buff, &q_gps);
+					if (strlen(buff) != (len + 1)) {
+						HAL_GPIO_WritePin(GPIOD, LED_ERROR, GPIO_PIN_RESET);//LED OFF
+						memcpy(buff, AtRxBuf, len);
+						if (strstr(AtRxBuf, "+CGNSINF:")) {
+							sta = putQ(buff, &q_gps);
+						} else {
+							sta = putQ(buff, &q_at);
+						}
 					} else {
-						sta = putQ(buff, &q_at);
+						sta = -1;
+						HAL_GPIO_WritePin(GPIOD, LED_ERROR, GPIO_PIN_SET);//LED ON
 					}
 					if (sta < 0) free(buff);
 				}
@@ -1652,13 +1653,13 @@ int8_t ret = -1;
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.speed), Items[i++], 0);//"Speed"
         jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.dir), Items[i++], 0);//"Dir"
 //        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.mode), Items[i++], 0);//"Mode"
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.HDOP), Items[i++], 0);//"HDOP"
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.PDOP), Items[i++], 0);//"PDOP"
-        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.VDOP), Items[i++], 0);//"VDOP"
+        i++;//jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.HDOP), Items[i++], 0);//"HDOP"
+        i++;//jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.PDOP), Items[i++], 0);//"PDOP"
+        i++;//jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.VDOP), Items[i++], 0);//"VDOP"
         jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.GPSsatV), Items[i++], 0);//"SatGPSV"
         jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.GNSSsatU), Items[i++], 0);//"SatGNSSU"
         jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.GLONASSsatV), Items[i++], 0);//"SatGLONASSV"
-        jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.dBHz), Items[i++], 0);//"dBHz"
+        i++;//jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, data->inf.dBHz), Items[i++], 0);//"dBHz"
 //        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.HPA), Items[i++], 0);//"HPA"
 //        jfes_set_object_property(jconf, obj, jfes_create_double_value(jconf, (double)data->inf.VPA), Items[i++], 0);//"VPA"
         jfes_set_object_property(jconf, obj, jfes_create_integer_value(jconf, dBmRSSI[gsm_stat.rssi&0x1f]), Items[i++], 0);//"RSSI"
@@ -1852,7 +1853,7 @@ void toDisplay(const char *st, uint8_t column, uint8_t line, bool clear)
 void *getMem(size_t len)
 {
 #ifdef SET_CALLOC_MEM
-		return (calloc(len, 1));
+		return (calloc(1, len));
 #else
 	#ifdef SET_MALLOC_MEM
 		return (malloc(len));
@@ -2461,7 +2462,6 @@ int ucs2_to_text(char *buf_in, uint8_t *buf_out)
 int8_t makeSMSString(const char *body, uint16_t *blen, char *fnum, uint16_t snum, char *buf, int max_len_buf)
 {
 int8_t ret = -1;
-uint16_t body_len = *blen;
 
 #ifdef SET_JFES
     uint8_t i = 0;
@@ -2497,7 +2497,7 @@ uint16_t body_len = *blen;
     }
 
 #else
-
+    uint16_t body_len = *blen;
     strcpy(buf, "{\r\n");
     int len = 4;
 
@@ -2626,6 +2626,7 @@ int8_t nrec = -1;
 	}
 #else
 	int need_len = txt_len + 1;
+	if (need_len <= MAX_UART_BUF) need_len = MAX_UART_BUF;
 	char *rc = (char *)getMem((size_t)need_len);
 	if (rc) {
 		int got_len = strlen(rc);

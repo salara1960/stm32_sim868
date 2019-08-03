@@ -54,9 +54,6 @@ extern "C" {
 /* USER CODE BEGIN ET */
 
 
-#undef SET_STATIC_MEM_LOG	//use dynamic memmory
-
-
 #define MAX_QMSG 8
 
 
@@ -176,14 +173,11 @@ typedef struct {
 //-------------------------------------------------------------------
 #ifdef SET_SMS
 
-#define SET_SMSQ_STATIC
-//#define SET_CALLOC_MEM
-//#define SET_MALLOC_MEM
 
 #define MAX_QSMS 4
 #define maxSMSPart 8
-#define MaxBodyLen 113
-#define SMS_BUF_LEN 560
+#define MaxBodyLen 121//113
+#define SMS_BUF_LEN 600
 
 #define cod_PDU_len 159 //137
 #define lenFrom 32
@@ -197,7 +191,7 @@ typedef struct s_udhi_t {
 	uint8_t total;//количество частей
 	uint8_t part;//номер части
 	uint16_t len;
-	char txt[MaxBodyLen];//113//[MaxBodyLen];//440 bytes
+	char txt[MaxBodyLen];//121//113//[MaxBodyLen];//440 bytes
 } s_udhi_t;
 #pragma pack(pop)
 
@@ -258,14 +252,14 @@ extern SPI_HandleTypeDef *portSPI;
 #ifdef SET_JFES
 	#define MAX_UART_BUF 640//704//640//512//480//400//384//256
 #else
-	#define MAX_UART_BUF 600//512//480//400//384//256
+	#define MAX_UART_BUF 640//600//512//480//400//384//256
 #endif
 
 
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
-extern void Error_Handler(void);
+void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
 
