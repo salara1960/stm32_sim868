@@ -174,7 +174,7 @@ typedef struct {
 #ifdef SET_SMS
 
 
-#define MAX_QSMS 4
+#define MAX_QSMS 8
 #define maxSMSPart 8
 #define MaxBodyLen 121//113
 #define SMS_BUF_LEN 600

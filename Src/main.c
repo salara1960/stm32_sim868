@@ -96,7 +96,8 @@
 //const char *ver = "ver 3.2rc5";//01.08.2019 - minor changes :  add queue for SMS
 //const char *ver = "ver 3.2rc6";//02.08.2019 - minor changes : add static body mode in SMS queue, remove link option -specs=nosys.specs ! <- now calloc working !!!
 //const char *ver = "ver 3.3rc1";//03.08.2019 - minor changes : set HEAP_SIZE up to 32K, use JFES library, fixed memory leak bug
-const char *ver = "ver 3.3rc2";//08.08.2019 - minor changes : check sms - in sms command present ?
+//const char *ver = "ver 3.3rc2";//08.08.2019 - minor changes : check sms - in sms command present ?
+const char *ver = "ver 3.4rc1";//08.08.2019 - minor changes : remove inf_data's queue, put inf_data to sms queue, support cmd via sms
 
 
 /*
@@ -149,7 +150,10 @@ osThreadId_t sensTaskHandle;
 osThreadId_t atTaskHandle;
 osMessageQueueId_t mailQueueHandle;
 osSemaphoreId_t binSemHandle;
+
 /* USER CODE BEGIN PV */
+
+osSemaphoreId_t msgSem;
 
 const uint32_t ModuleOFF = 1750;
 const uint32_t ModuleON  = 1150;
@@ -224,6 +228,7 @@ const char *cmds[] = {
 	"AT+CSQ\r\n"//get RSSI
 };
 
+const char *sim_auth_num = "79097960000";
 const char *sim_num = "+79062100000";
 const char *srv_adr_def = "aaa.bbb.ccc.ddd";
 const uint16_t srv_port_def = 9192;
@@ -238,7 +243,7 @@ volatile static bool LoopAll = true;
 uint8_t *adrByte = NULL;
 volatile s_flags flags = {0};
 volatile s_gprs_stat gprs_stat = {0};
-osMessageQueueId_t mqData;
+//osMessageQueueId_t mqData;
 uint32_t infCounter = 0;
 s_gsm_stat gsm_stat = {0};
 const char *gpsINF = "AT+CGNSINF\r\n";
@@ -342,8 +347,7 @@ const int8_t dBmRSSI[max_rssi] = {
 	const char *eolin = "\r\n";
 	int TSINPART = 0;//from, date/time are present in part 1 sms only, if sms without udhi -> from, date/time not present
 	char SMS_text[SMS_BUF_LEN];
-
-	char smsGPRS[MAX_UART_BUF];
+	char smsTMP[MAX_UART_BUF];
 
 #endif
 
@@ -365,6 +369,9 @@ void StartSensTask(void *argument); // for v2
 void StartAtTask(void *argument); // for v2
 
 /* USER CODE BEGIN PFP */
+void *getMEM(size_t sz);
+void freeMEM(void *ptr);
+void initSMSQ(s_smsq_t *sq);//s_smsq_t smsq;
 
 void Report(bool addTime, const char *fmt, ...);
 void errLedOn(const char *from);
@@ -454,8 +461,8 @@ int main(void)
     srv_port = srv_port_def;
 
 #ifdef SET_JFES
-    conf.jfes_malloc = (jfes_malloc_t)malloc;//pvPortMalloc,
-    conf.jfes_free = free;//vPortFree;
+    conf.jfes_malloc = (jfes_malloc_t)getMEM;//pvPortMalloc,
+    conf.jfes_free = freeMEM;//vPortFree;
     jconf = &conf;
 #endif
 
@@ -477,6 +484,13 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
+
+  const osSemaphoreAttr_t msgSem_attributes = {
+  		.name = "msgSem"
+  };
+  msgSem = osSemaphoreNew(1, 1, &msgSem_attributes);
+
+
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* USER CODE BEGIN RTOS_TIMERS */
@@ -492,16 +506,19 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
-
+  	  /*
   	  const osMessageQueueAttr_t mqData_attributes = {
   		.name = "mqAllData"
   	  };
   	  mqData = osMessageQueueNew(MAX_QMSG, sizeof(s_data_t), &mqData_attributes);
-
+	  */
   	  HAL_Delay(1500);
   	  rx_uk = 0;
   	  memset(RxBuf, 0, MAX_UART_BUF);
   	  HAL_UART_Receive_IT(portLOG, (uint8_t *)&lRxByte, 1);//LOG
+
+  	  initSMSQ(&smsq);//char *rc = (char *)pvPortMalloc(len); vPortFree(rc);
+  					  //char *rc = (char *)calloc(1, len); free(rc);
 
   /* USER CODE END RTOS_QUEUES */
 
@@ -510,7 +527,7 @@ int main(void)
   const osThreadAttr_t defTask_attributes = {
     .name = "defTask",
     .priority = (osPriority_t) osPriorityAboveNormal,
-    .stack_size = 2048
+    .stack_size = 3072
   };
   defTaskHandle = osThreadNew(StartDefTask, NULL, &defTask_attributes);
 
@@ -526,7 +543,7 @@ int main(void)
   const osThreadAttr_t atTask_attributes = {
     .name = "atTask",
     .priority = (osPriority_t) osPriorityHigh,
-    .stack_size = 6144
+    .stack_size = 8192
   };
   atTaskHandle = osThreadNew(StartAtTask, NULL, &atTask_attributes);
 
@@ -945,6 +962,16 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+//------------------------------------------------------------------------------------------
+void *getMEM(size_t sz)
+{
+	return calloc(1, sz);
+}
+//------------------------------------------------------------------------------------------
+void freeMEM(void *ptr)
+{
+	free(ptr);
+}
 //------------------------------------------------------------------------------------------
 bool getVIO()
 {
@@ -1662,6 +1689,7 @@ int8_t ret = -1;
         jfes_size_t stx_size  = (jfes_size_t)max_len_buf;
         jfes_value_to_string(obj, buf, &stx_size, 1);
         *(buf + stx_size) = '\0';
+        strcat(buf, "\r\n");
 
         jfes_free_value(jconf, obj);
 
@@ -1801,7 +1829,7 @@ int8_t ret = -1;
 
 	}//for
 
-	strcat(buf, "}");
+	strcat(buf, "}\r\n");
 
 	ret = 0;
 
@@ -2549,18 +2577,23 @@ int8_t putSMSQ(char *adr, s_smsq_t *sq)
 {
 int8_t ret = -1;
 
+	if (osSemaphoreAcquire(msgSem, 500) == osOK) {
+
 #ifdef SET_SMSQ_STATIC
-	if (!strlen(sq->sms[sq->put].adr)) {
-		int len = strlen(adr);
-		if (len >= SMS_BUF_LEN) len = SMS_BUF_LEN - 1;
-		memcpy((char *)&sq->sms[sq->put].adr[0], adr, len);
-		sq->sms[sq->put].adr[len] = '\0';
+		if (!strlen(sq->sms[sq->put].adr)) {
+			int len = strlen(adr);
+			if (len >= SMS_BUF_LEN) len = SMS_BUF_LEN - 1;
+			memcpy((char *)&sq->sms[sq->put].adr[0], adr, len);
+			sq->sms[sq->put].adr[len] = '\0';
 #else
-	if (sq->sms[sq->put].adr == NULL) {
-		sq->sms[sq->put].adr = adr;
+		if (sq->sms[sq->put].adr == NULL) {
+			sq->sms[sq->put].adr = adr;
 #endif
-		ret = sq->sms[sq->put].id;
-		sq->put++; if (sq->put >= MAX_QSMS) sq->put = 0;
+			ret = sq->sms[sq->put].id;
+			sq->put++; if (sq->put >= MAX_QSMS) sq->put = 0;
+		}
+
+		osSemaphoreRelease(msgSem);
 	}
 
 	return ret;
@@ -2571,27 +2604,33 @@ int8_t getSMSQ(char *dat, s_smsq_t *sq)
 int8_t ret = -1;
 int len = 0;
 
+	if (osSemaphoreAcquire(msgSem, 500) == osOK) {
+
 #ifdef SET_SMSQ_STATIC
-	len = strlen(sq->sms[sq->get].adr);
-	if (len) {
-		ret = sq->sms[sq->get].id;
-		memcpy(dat, sq->sms[sq->get].adr, len);
-		sq->sms[sq->get].adr[0] = '\0';
-	}
-#else
-	if (sq->sms[sq->get].adr != NULL) {
 		len = strlen(sq->sms[sq->get].adr);
-		ret = sq->sms[sq->get].id;
-		memcpy(dat, sq->sms[sq->get].adr, len);
-		freeMem(sq->sms[sq->get].adr);
-		sq->sms[sq->get].adr = NULL;
-	}
+		if (len) {
+			ret = sq->sms[sq->get].id;
+			memcpy(dat, sq->sms[sq->get].adr, len);
+			sq->sms[sq->get].adr[0] = '\0';
+		}
+#else
+		if (sq->sms[sq->get].adr != NULL) {
+			len = strlen(sq->sms[sq->get].adr);
+			ret = sq->sms[sq->get].id;
+			memcpy(dat, sq->sms[sq->get].adr, len);
+			freeMem(sq->sms[sq->get].adr);
+			sq->sms[sq->get].adr = NULL;
+		}
 #endif
 
-	if (ret >= 0) {
-		*(dat + len) = '\0';
-		sq->get++;
-		if (sq->get >= MAX_QSMS) sq->get = 0;
+		if (ret >= 0) {
+			*(dat + len) = '\0';
+			sq->get++;
+			if (sq->get >= MAX_QSMS) sq->get = 0;
+		}
+
+		osSemaphoreRelease(msgSem);
+
 	}
 
 	return ret;
@@ -2607,9 +2646,9 @@ int8_t nrec = -1;
 		txt[txt_len] = '\0';
 	}
 	if ((nrec = putSMSQ(txt, sq)) >= 0) {
-		Report(true, "[%s] : add sms_record OK (id=%d len=%d)\r\n", __func__, nrec, txt_len);
+		Report(true, "[%s] : add record OK (id=%d len=%d)\r\n", __func__, nrec, txt_len);
 	} else {
-		Report(true, "[%s] : add sms_record error (len=%d)\r\n", __func__, txt_len);
+		Report(true, "[%s] : add record error (len=%d)\r\n", __func__, txt_len);
 	}
 #else
 	int need_len = txt_len + 1;
@@ -2636,46 +2675,42 @@ int8_t nrec = -1;
 	return nrec;
 }
 //------------------------------------------------------------------------------------------
-void checkSMS(char *uzs)//  check : command present in sms ?
+void checkSMS(char *body, char *from)//  check : command present in sms ?
 {
-char *uz = NULL;
 
-	if ((uz = strstr(uzs, ":INF")) != NULL) {
-		if (uz == uzs) flags.inf = 1;
-	} else if ((uz = strstr(uzs, ":GET")) != NULL) {
-		if (uz == uzs) flags.msg_begin = 1;
-	} else if ((uz = strstr(uzs, ":CON")) != NULL) {
-		if (uz == uzs) {
-			flags.connect = 1;
-			con_dis = true;
-		}
-	} else if ((uz = strstr(uzs, ":DIS")) != NULL) {
-		if (uz == uzs) {
-			flags.disconnect = 1;
-			con_dis = false;
-		}
-	} else if ((uz = strstr(uzs, ":VIO")) != NULL) {
-		if (uz == uzs) flags.vio = 1;
-	} else if ((uz = strstr(uzs, ":ON")) != NULL) {
-		if (uz == uzs) evt_gsm = 1;
-	} else if ((uz = strstr(uzs, ":OFF")) != NULL) {
-		if (uz == uzs) evt_gsm = 2;
-	} else if ((uz = strstr(uzs, ":RESTART")) != NULL) {
-		if (uz == uzs) {
-			if (LoopAll) {
-				flags.restart = 1;
-			} else {
+	if (!strstr(from, sim_auth_num)) {
+		Report(true, "Error : sms from '%s' number (auth number '%s')\r\n", from, sim_auth_num);
+		return;
+	}
+	//
+	if (strstr(body, ":INF")) {
+		flags.inf = 1;
+	} else if (strstr(body, ":GET")) {
+		flags.msg_begin = 1;
+	} else if (strstr(body, ":CON")) {
+		flags.connect = 1;
+		con_dis = true;
+	} else if (strstr(body, ":DIS")) {
+		flags.disconnect = 1;
+		con_dis = false;
+	} else if (strstr(body, ":VIO")) {
+		flags.vio = 1;
+	} else if (strstr(body, ":ON")) {
+		evt_gsm = 1;
+	} else if (strstr(body, ":OFF")) {
+		evt_gsm = 2;
+	} else if (strstr(body, ":RESTART")) {
+		if (LoopAll) {
+			flags.restart = 1;
+		} else {
 #ifdef SET_OLED_I2C
-				i2c_ssd1306_clear();
+			i2c_ssd1306_clear();
 #endif
 #ifdef SET_OLED_SPI
-				spi_ssd1306_clear();
+			spi_ssd1306_clear();
 #endif
-				NVIC_SystemReset();
-			}
+			NVIC_SystemReset();
 		}
-	} else if ((uz = strstr(uzs, ":STOP")) != NULL) {
-		if (uz == uzs) flags.stop = 1;
 	}
 }
 //-----------------------------------------------------------------------------------------
@@ -2807,7 +2842,9 @@ void StartDefTask(void *argument)
   		//-------------------------------------------------------------------------
   		if (new == 3) {
   			new = 0;
-  			osMessageQueuePut(mqData, (void *)&iData, 0, 20);
+  			if (!makeInfString(&iData, DefBuf, sizeof(DefBuf) - 3)) {
+  				addToSMSQ(DefBuf, strlen(DefBuf), &smsq);
+  			}
   		}
   		//-------------------------------------------------------------------------
 
@@ -2939,21 +2976,20 @@ void StartAtTask(void *argument)
 	gprs_stat.send_ok = gprs_stat.next_send = 1;
 
 	bool yes = false;
-	int8_t who = -1;
 	msgGPRS[0] = 0;
 	char cmd[64];
 	int dl, i, j, k;
-	uint16_t gprs_len;
 
 #ifdef SET_SMS
-	initSMSQ(&smsq);//char *rc = (char *)pvPortMalloc(len); vPortFree(rc);
-					//char *rc = (char *)calloc(1, len); free(rc);
+//	initSMSQ(&smsq);//char *rc = (char *)pvPortMalloc(len); vPortFree(rc);
+//					//char *rc = (char *)calloc(1, len); free(rc);
 	char fromNum[lenFrom] = {0};
 	uint8_t abcd[5] = {0};
+	smsTMP[0] = 0;
 	uint16_t sms_num;
 	uint16_t sms_len;
 	uint8_t sms_total;
-	int8_t nrec;
+	int8_t nrec = -1;
 	s_udhi_t reco;
 	uint32_t wait_sms = 0;
 	InitSMSList();
@@ -2962,8 +2998,6 @@ void StartAtTask(void *argument)
 	char toScr[SCREEN_SIZE];
 
 	tms = min_ms;
-
-	s_data_t aData;
 
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 	sprintf(toScr, "%s", srv_adr);
@@ -2986,6 +3020,9 @@ void StartAtTask(void *argument)
 	}
 	bool prf = true;
 	uint32_t wait_csq = 0;
+
+//	uint8_t ready_to_send = 0;
+	uint16_t snd_len = 0;
 
 	uint32_t cmdDelay = 0;
 	wait_ack = get_tmr(2);
@@ -3097,68 +3134,60 @@ void StartAtTask(void *argument)
 			break;
 			case 3:
 				yes = false;
+				//
 				if (flags.connect) {
-					if (cmdsDone) {
-						flags.connect = 0;
-						if (!gprs_stat.connect) {
+					if (!gprs_stat.connect) {
+						if (cmdsDone) {
+							flags.connect = 0;
 							yes = true;
 							sprintf(cmd, "AT+CIPSTART=\"TCP\",\"%s\",%u\r\n", srv_adr, srv_port);
 							buff = cmd;
 							gprs_stat.try_connect = 1;
 						}
-					}
-				}
-				if (flags.disconnect) {
-					if (cmdsDone) {
-						flags.disconnect = 0;
-						if (gprs_stat.connect) {
+					} else flags.connect = 0;
+				} else if (flags.disconnect) {
+					if (gprs_stat.connect) {
+						if (cmdsDone) {
+							flags.disconnect = 0;
 							yes = true;
 							buff = gprsDISCONNECT;//"AT+CIPCLOSE\r\n"
 							gprs_stat.try_disconnect = 1;
 						}
-					}
+					} else flags.disconnect = 0;
 				}
-				if (osMessageQueueGet(mqData, (void *)&aData, NULL, 10) == osOK) {
-					if (!makeInfString(&aData, msgGPRS, sizeof(msgGPRS) - 3)) {
-						strcat(msgGPRS, "\r\n");
-						gprs_len = strlen(msgGPRS);
+				//
+				if (!yes) {
+					//if (!ready_to_send) {
+						if ((nrec = getSMSQ(msgGPRS, &smsq)) >= 0) {
+							//ready_to_send = 1;
+							snd_len = strlen(msgGPRS);
+							Report(true, "[getSMSQ] : get record OK (id=%d len=%u)\r\n", nrec , snd_len);
+							if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
+								sprintf(cmd, "AT+CIPSEND=%d\r\n", snd_len);
+								yes = true;
+								buff = cmd;
+								gprs_stat.next_send = 0;
+								//ready_to_send = 0;
+							} else if (flags.log_show) Report(true, "%s(%u)\r\n", msgGPRS, snd_len);
+						}
+					//}
+					/*
+					if (ready_to_send) {
 						if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
-							sprintf(cmd, "AT+CIPSEND=%d\r\n", gprs_len);
+							sprintf(cmd, "AT+CIPSEND=%d\r\n", snd_len);
 							yes = true;
 							buff = cmd;
-							who = 0;
 							gprs_stat.next_send = 0;
-						} else if (flags.log_show) Report(true, "%s(%u)\r\n", msgGPRS, gprs_len);
+							ready_to_send = 0;
+						}
 					}
-				}
-#ifdef SET_SMS
-				else if ((nrec = getSMSQ(smsGPRS, &smsq)) >= 0) {
-					sms_len = strlen(smsGPRS);
-					Report(true, "[getSMSQ] : get sms_record OK (id=%d len=%u)\r\n", nrec , sms_len);
-
-					//----------------  check : command present in sms ?   ------------------------
-					checkSMS(smsGPRS);
-					//-----------------------------------------------------------------------------
-
-					if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
-						sprintf(cmd, "AT+CIPSEND=%d\r\n", sms_len);
-						yes = true;
-						buff = cmd;
-						who = 1;
-						gprs_stat.next_send = 0;
-					} else if (flags.log_show) Report(true, "%s(%u)\r\n", smsGPRS, sms_len);
-				}
-#endif
+					*/
+				}//if (!yes)
+				//
 				if (gprs_stat.prompt && gprs_stat.connect) {
 					yes = true;
-#ifdef SET_SMS
-					if (!who) buff = msgGPRS;
-					else if (who == 1) buff = smsGPRS;
-#else
 					buff = msgGPRS;
-#endif
 					gprs_stat.prompt = 0;
-					who = -1;
 				}
 				if (!yes) {
 					if (flags.inf) {
@@ -3204,6 +3233,7 @@ void StartAtTask(void *argument)
 				if (getQ(msgAT, &q_at) < 0) break;
 
 				if (strstr(msgAT, "NORMAL POWER DOWN")) {
+					HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
 					gprs_stat.init = gprs_stat.connect = 0;
 					wait_ack = get_tmr(4);
 					faza = 4;
@@ -3369,11 +3399,14 @@ void StartAtTask(void *argument)
 													if (ConcatSMS(SMS_text, reco.total, &sms_num, &sms_len) == reco.total) {
 														Report(true, "[SMS] Concat message #%u (len=%u parts=%u) done:\r\n%.*s\r\n",
 																     sms_num, sms_len, reco.total, sms_len, SMS_text);
-														*msgGPRS = '\0';
-														if (!makeSMSString(SMS_text, &sms_len, fromNum, sms_num, smsGPRS, sizeof(smsGPRS) - 1)) {
+														//----------------  check : command present in sms ?   ------------------------
+														checkSMS(SMS_text, fromNum);
+														//-----------------------------------------------------------------------------
+														*smsTMP = '\0';
+														if (!makeSMSString(SMS_text, &sms_len, fromNum, sms_num, smsTMP, sizeof(smsTMP) - 1)) {
 															//
-															if (addToSMSQ(smsGPRS, sms_len, &smsq) < 0) {
-																if (flags.log_show) Report(true, smsGPRS);
+															if (addToSMSQ(smsTMP, sms_len, &smsq) < 0) {
+																if (flags.log_show) Report(true, smsTMP);
 															}
 															//
 														}
@@ -3384,12 +3417,15 @@ void StartAtTask(void *argument)
 											}
 										}
 									} else {//without_UDHI
-										*msgGPRS = '\0';
-										if (!makeSMSString(SMS_text, &sms_len, fromNum, sms_num, smsGPRS, sizeof(smsGPRS) - 1)) {
+										//----------------  check : command present in sms ?   ------------------------
+										checkSMS(SMS_text, fromNum);
+										//-----------------------------------------------------------------------------
+										*smsTMP = '\0';
+										if (!makeSMSString(SMS_text, &sms_len, fromNum, sms_num, smsTMP, sizeof(smsTMP) - 1)) {
 
 											//
-											if (addToSMSQ(smsGPRS, sms_len, &smsq) < 0) {
-												if (flags.log_show) Report(true, smsGPRS);
+											if (addToSMSQ(smsTMP, sms_len, &smsq) < 0) {
+												if (flags.log_show) Report(true, smsTMP);
 											}
 											//
 										}
@@ -3457,11 +3493,14 @@ void StartAtTask(void *argument)
 					if (ConcatSMS(SMS_text, sms_total, &sms_num, &sms_len) == sms_total) {
 						Report(true, "[SMS] Concat message #%u with len %u by timeout:\r\n%.*s\r\n",
 								     sms_num, sms_len, sms_len, SMS_text);
-						*msgGPRS = '\0';
-						if (!makeSMSString(SMS_text, &sms_len, fromNum, sms_num, smsGPRS, sizeof(smsGPRS) - 1)) {
+						//----------------  check : command present in sms ?   ------------------------
+						checkSMS(SMS_text, fromNum);
+						//-----------------------------------------------------------------------------
+						*smsTMP = '\0';
+						if (!makeSMSString(SMS_text, &sms_len, fromNum, sms_num, smsTMP, sizeof(smsTMP) - 1)) {
 							//
-							if (addToSMSQ(smsGPRS, sms_len, &smsq) < 0) {
-								if (flags.log_show) Report(true, smsGPRS);
+							if (addToSMSQ(smsTMP, sms_len, &smsq) < 0) {
+								if (flags.log_show) Report(true, smsTMP);
 							}
 							//
 						}
