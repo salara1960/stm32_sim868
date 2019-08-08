@@ -95,7 +95,8 @@
 //const char *ver = "ver 3.2rc4";//01.08.2019 - minor changes :  implemented sending to tcp-server received SMS
 //const char *ver = "ver 3.2rc5";//01.08.2019 - minor changes :  add queue for SMS
 //const char *ver = "ver 3.2rc6";//02.08.2019 - minor changes : add static body mode in SMS queue, remove link option -specs=nosys.specs ! <- now calloc working !!!
-const char *ver = "ver 3.3rc1";//03.08.2019 - minor changes : set HEAP_SIZE up to 32K, use JFES library, fixed memory leak bug
+//const char *ver = "ver 3.3rc1";//03.08.2019 - minor changes : set HEAP_SIZE up to 32K, use JFES library, fixed memory leak bug
+const char *ver = "ver 3.3rc2";//08.08.2019 - minor changes : check sms - in sms command present ?
 
 
 /*
@@ -216,25 +217,11 @@ const char *cmds[] = {
 	"AT+GSN\r\n",//get IMEI
 	"AT+CNMI=1,2,0,1,0\r\n",
 	"AT+SCLASS0=0\r\n",
-//	"AT+CPMS=\"SM\",\"SM\",\"SM\"\r\n",
 	"AT+CMGF=0\r\n",//;+CLIP=1\r\n",
-//	"AT+CIMI\r\n",//get IMCI
-//	"AT+CMGF=1\r\n",//text mode
-//	"AT+CSCS=\"IRA\"\r\n",
 	"AT+CGNSPWR=1\r\n",// power for GPS/GLONASS ON
 	"AT+CGNSPWR?\r\n",//check power for GPS/GLONASS status
-//	"AT+CCLK?\r\n",//get date/time
 	"AT+CREG?\r\n",
 	"AT+CSQ\r\n"//get RSSI
-//	"AT+CENG=1\r\n",//Switch on engineering mode
-/*	"AT+CGDCONT=1,\"IP\",\"internet.beeline.ru\"\r\n",
-	"AT+CSTT=\"internet.beeline.ru\",\"beeline\",\"beeline\"\r\n",
-	"AT+CGACT=1,1\r\n",
-	"AT+CIICR\r\n",
-	"AT+CGATT?\r\n",
-	"AT+CGATT=1\r\n",
-	"AT+CIFSR\r\n"*/
-//	"AT+CENG?\r\n"
 };
 
 const char *sim_num = "+79062100000";
@@ -2649,6 +2636,49 @@ int8_t nrec = -1;
 	return nrec;
 }
 //------------------------------------------------------------------------------------------
+void checkSMS(char *uzs)//  check : command present in sms ?
+{
+char *uz = NULL;
+
+	if ((uz = strstr(uzs, ":INF")) != NULL) {
+		if (uz == uzs) flags.inf = 1;
+	} else if ((uz = strstr(uzs, ":GET")) != NULL) {
+		if (uz == uzs) flags.msg_begin = 1;
+	} else if ((uz = strstr(uzs, ":CON")) != NULL) {
+		if (uz == uzs) {
+			flags.connect = 1;
+			con_dis = true;
+		}
+	} else if ((uz = strstr(uzs, ":DIS")) != NULL) {
+		if (uz == uzs) {
+			flags.disconnect = 1;
+			con_dis = false;
+		}
+	} else if ((uz = strstr(uzs, ":VIO")) != NULL) {
+		if (uz == uzs) flags.vio = 1;
+	} else if ((uz = strstr(uzs, ":ON")) != NULL) {
+		if (uz == uzs) evt_gsm = 1;
+	} else if ((uz = strstr(uzs, ":OFF")) != NULL) {
+		if (uz == uzs) evt_gsm = 2;
+	} else if ((uz = strstr(uzs, ":RESTART")) != NULL) {
+		if (uz == uzs) {
+			if (LoopAll) {
+				flags.restart = 1;
+			} else {
+#ifdef SET_OLED_I2C
+				i2c_ssd1306_clear();
+#endif
+#ifdef SET_OLED_SPI
+				spi_ssd1306_clear();
+#endif
+				NVIC_SystemReset();
+			}
+		}
+	} else if ((uz = strstr(uzs, ":STOP")) != NULL) {
+		if (uz == uzs) flags.stop = 1;
+	}
+}
+//-----------------------------------------------------------------------------------------
 
 #endif
 
@@ -3105,6 +3135,11 @@ void StartAtTask(void *argument)
 				else if ((nrec = getSMSQ(smsGPRS, &smsq)) >= 0) {
 					sms_len = strlen(smsGPRS);
 					Report(true, "[getSMSQ] : get sms_record OK (id=%d len=%u)\r\n", nrec , sms_len);
+
+					//----------------  check : command present in sms ?   ------------------------
+					checkSMS(smsGPRS);
+					//-----------------------------------------------------------------------------
+
 					if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
 						sprintf(cmd, "AT+CIPSEND=%d\r\n", sms_len);
 						yes = true;
