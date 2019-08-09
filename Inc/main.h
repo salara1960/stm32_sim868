@@ -53,9 +53,14 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
-
+#ifdef SET_JFES
+	#define MAX_UART_BUF 640//704//640//512//480//400//384//256
+#else
+	#define MAX_UART_BUF 640//600//512//480//400//384//256
+#endif
+#define REC_BUF_LEN MAX_UART_BUF//600
 #define MAX_QMSG 8
-
+#define MAX_QREC 8
 
 #pragma pack(push,1)
 typedef struct {
@@ -170,14 +175,32 @@ typedef struct {
 } s_gsm_stat;
 #pragma pack(pop)
 
+
+#pragma pack(push,1)
+typedef struct q_rec_t {
+	int8_t id;
+	#ifdef SET_RECQ_STATIC
+		char adr[REC_BUF_LEN];
+	#else
+		char *adr;
+	#endif
+} q_rec_t;
+#pragma pack(pop)
+
+#pragma pack(push,1)
+typedef struct s_recq_t {
+	uint8_t put;
+	uint8_t get;
+	q_rec_t rec[MAX_QREC];
+} s_recq_t;
+#pragma pack(pop)
+
 //-------------------------------------------------------------------
 #ifdef SET_SMS
 
-
-#define MAX_QSMS 8
+#define SMS_BUF_LEN 512//600
 #define maxSMSPart 8
 #define MaxBodyLen 121//113
-#define SMS_BUF_LEN 600
 
 #define cod_PDU_len 159 //137
 #define lenFrom 32
@@ -193,25 +216,6 @@ typedef struct s_udhi_t {
 	uint16_t len;
 	char txt[MaxBodyLen];//121//113//[MaxBodyLen];//440 bytes
 } s_udhi_t;
-#pragma pack(pop)
-
-#pragma pack(push,1)
-typedef struct q_rec_t {
-	int8_t id;
-	#ifdef SET_SMSQ_STATIC
-		char adr[SMS_BUF_LEN];
-	#else
-		char *adr;
-	#endif
-} q_rec_t;
-#pragma pack(pop)
-
-#pragma pack(push,1)
-typedef struct s_smsq_t {
-	uint8_t put;
-	uint8_t get;
-	q_rec_t sms[MAX_QSMS];
-} s_smsq_t;
 #pragma pack(pop)
 
 #endif
@@ -248,12 +252,6 @@ extern SPI_HandleTypeDef *portSPI;
 #define size_imei 15
 #define wait_csq_def wait_gps_def - 2
 #define max_rssi 32
-
-#ifdef SET_JFES
-	#define MAX_UART_BUF 640//704//640//512//480//400//384//256
-#else
-	#define MAX_UART_BUF 640//600//512//480//400//384//256
-#endif
 
 
 /* USER CODE END EM */

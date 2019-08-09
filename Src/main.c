@@ -97,7 +97,8 @@
 //const char *ver = "ver 3.2rc6";//02.08.2019 - minor changes : add static body mode in SMS queue, remove link option -specs=nosys.specs ! <- now calloc working !!!
 //const char *ver = "ver 3.3rc1";//03.08.2019 - minor changes : set HEAP_SIZE up to 32K, use JFES library, fixed memory leak bug
 //const char *ver = "ver 3.3rc2";//08.08.2019 - minor changes : check sms - in sms command present ?
-const char *ver = "ver 3.4rc1";//08.08.2019 - minor changes : remove inf_data's queue, put inf_data to sms queue, support cmd via sms
+//const char *ver = "ver 3.4rc1";//08.08.2019 - minor changes : remove inf_data's queue, put inf_data to sms queue, support cmd via sms
+const char *ver = "ver 3.4rc2";//09.08.2019 - minor changes : unused variables removed, add semaphore 'msgSem' for queue 'recq'
 
 
 /*
@@ -171,7 +172,7 @@ I2C_HandleTypeDef *portBMP;
 #ifdef SET_OLED_I2C
 	I2C_HandleTypeDef *portSSD;
 #endif
-I2C_HandleTypeDef *portBH;
+I2C_HandleTypeDef *portBH;//hi2c1;
 UART_HandleTypeDef *portAT;//huart4;
 UART_HandleTypeDef *portLOG;//huart3;
 #ifdef SET_OLED_SPI
@@ -192,8 +193,7 @@ static char RxBuf[MAX_UART_BUF];
 volatile uint16_t rx_uk;
 uint8_t lRxByte;
 
-volatile uint8_t rmc5 = 12;//8;//6;
-char msgNMEA[MAX_UART_BUF] = {0};
+volatile uint8_t rmc5 = wait_sensor_def - 10;//12;//8;//6;
 static s_msg_t q_gps;
 const char *nameValid[] = {"Invaid", "Valid"};
 const char *nameNS[] = {"North" , "South"};
@@ -213,7 +213,7 @@ static int8_t cmdsInd = -1;
 volatile bool cmdsDone = true;
 char msgCMD[MAX_UART_BUF] = {0};
 static s_msg_t q_cmd;
-const uint8_t cmdsMax = 11;//19;//21;
+const uint8_t cmdsMax = 11;
 const char *cmds[] = {
 	"AT\r\n",
 	"AT+CMEE=0\r\n",
@@ -243,7 +243,6 @@ volatile static bool LoopAll = true;
 uint8_t *adrByte = NULL;
 volatile s_flags flags = {0};
 volatile s_gprs_stat gprs_stat = {0};
-//osMessageQueueId_t mqData;
 uint32_t infCounter = 0;
 s_gsm_stat gsm_stat = {0};
 const char *gpsINF = "AT+CGNSINF\r\n";
@@ -299,11 +298,12 @@ const int8_t dBmRSSI[max_rssi] = {
 	jfes_config_t *jconf = NULL;
 #endif
 
+	static s_recq_t recq;
 
 #ifdef SET_SMS
 
 	static s_udhi_t sms_rec[maxSMSPart];
-	static s_smsq_t smsq;
+
 
 	const char *smsType[max_smsType] = {
 		"+CMT: ",
@@ -369,9 +369,9 @@ void StartSensTask(void *argument); // for v2
 void StartAtTask(void *argument); // for v2
 
 /* USER CODE BEGIN PFP */
-void *getMEM(size_t sz);
-void freeMEM(void *ptr);
-void initSMSQ(s_smsq_t *sq);//s_smsq_t smsq;
+void *getMem(size_t sz);
+void freeMem(void *ptr);
+void initRECQ(s_recq_t *rq);
 
 void Report(bool addTime, const char *fmt, ...);
 void errLedOn(const char *from);
@@ -461,8 +461,8 @@ int main(void)
     srv_port = srv_port_def;
 
 #ifdef SET_JFES
-    conf.jfes_malloc = (jfes_malloc_t)getMEM;//pvPortMalloc,
-    conf.jfes_free = freeMEM;//vPortFree;
+    conf.jfes_malloc = (jfes_malloc_t)getMem;//pvPortMalloc,
+    conf.jfes_free = freeMem;//vPortFree;
     jconf = &conf;
 #endif
 
@@ -517,8 +517,10 @@ int main(void)
   	  memset(RxBuf, 0, MAX_UART_BUF);
   	  HAL_UART_Receive_IT(portLOG, (uint8_t *)&lRxByte, 1);//LOG
 
-  	  initSMSQ(&smsq);//char *rc = (char *)pvPortMalloc(len); vPortFree(rc);
+#ifdef SET_SMS
+  	  initRECQ(&recq);//char *rc = (char *)pvPortMalloc(len); vPortFree(rc);
   					  //char *rc = (char *)calloc(1, len); free(rc);
+#endif
 
   /* USER CODE END RTOS_QUEUES */
 
@@ -527,7 +529,7 @@ int main(void)
   const osThreadAttr_t defTask_attributes = {
     .name = "defTask",
     .priority = (osPriority_t) osPriorityAboveNormal,
-    .stack_size = 3072
+    .stack_size = 2048
   };
   defTaskHandle = osThreadNew(StartDefTask, NULL, &defTask_attributes);
 
@@ -543,7 +545,7 @@ int main(void)
   const osThreadAttr_t atTask_attributes = {
     .name = "atTask",
     .priority = (osPriority_t) osPriorityHigh,
-    .stack_size = 8192
+    .stack_size = 6144
   };
   atTaskHandle = osThreadNew(StartAtTask, NULL, &atTask_attributes);
 
@@ -962,16 +964,10 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-//------------------------------------------------------------------------------------------
-void *getMEM(size_t sz)
-{
-	return calloc(1, sz);
-}
-//------------------------------------------------------------------------------------------
-void freeMEM(void *ptr)
-{
-	free(ptr);
-}
+//******************************************************************************************
+//******************************************************************************************
+//******************************************************************************************
+
 //------------------------------------------------------------------------------------------
 bool getVIO()
 {
@@ -1107,7 +1103,6 @@ void errLedOn(const char *from)
 
 }
 //------------------------------------------------------------------------------------------
-// set LED_ERROR when error on and send message to UART1 (in from != NULL)
 //     act - action : true - ON, false - OFF
 void Leds(bool act, uint16_t Pin)
 {
@@ -1233,6 +1228,7 @@ void Report(bool addTime, const char *fmt, ...)
 HAL_StatusTypeDef er = HAL_OK;
 size_t len = MAX_UART_BUF;
 
+
 #ifndef SET_STATIC_MEM_LOG
 	char *buff = (char *)pvPortMalloc(len);//char *buff = (char *)calloc(1, len);
 	if (buff) {
@@ -1241,9 +1237,8 @@ size_t len = MAX_UART_BUF;
 #endif
 		int dl = 0, sz;
 		va_list args;
-
+		//
 		if (addTime) {
-
 #ifdef SET_RTC_TMR
 			dl = sec_to_string(get_secCounter(), buff, true);
 #else
@@ -2545,135 +2540,6 @@ int8_t ret = -1;
 
     return ret;
 }
-//-----------------------------------------------------------------------------
-void initSMSQ(s_smsq_t *sq)//s_smsq_t smsq;
-{
-	sq->put = sq->get = 0;
-	for (uint8_t i = 0; i < MAX_QSMS; i++) {
-		sq->sms[i].id = i;
-#ifdef SET_SMSQ_STATIC
-		sq->sms[i].adr[0] = '\0';
-#else
-		sq->sms[i].adr = NULL;
-#endif
-	}
-}
-//-----------------------------------------------------------------------------
-void clearSMSQ(s_smsq_t *sq)
-{
-	sq->put = sq->get = 0;
-	for (uint8_t i = 0; i < MAX_QSMS; i++) {
-		sq->sms[i].id = i;
-#ifdef SET_SMSQ_STATIC
-		sq->sms[i].adr[0] = '\0';
-#else
-		freeMem(sq->sms[i].adr);
-		sq->sms[i].adr = NULL;
-#endif
-	}
-}
-//-----------------------------------------------------------------------------
-int8_t putSMSQ(char *adr, s_smsq_t *sq)
-{
-int8_t ret = -1;
-
-	if (osSemaphoreAcquire(msgSem, 500) == osOK) {
-
-#ifdef SET_SMSQ_STATIC
-		if (!strlen(sq->sms[sq->put].adr)) {
-			int len = strlen(adr);
-			if (len >= SMS_BUF_LEN) len = SMS_BUF_LEN - 1;
-			memcpy((char *)&sq->sms[sq->put].adr[0], adr, len);
-			sq->sms[sq->put].adr[len] = '\0';
-#else
-		if (sq->sms[sq->put].adr == NULL) {
-			sq->sms[sq->put].adr = adr;
-#endif
-			ret = sq->sms[sq->put].id;
-			sq->put++; if (sq->put >= MAX_QSMS) sq->put = 0;
-		}
-
-		osSemaphoreRelease(msgSem);
-	}
-
-	return ret;
-}
-//-----------------------------------------------------------------------------
-int8_t getSMSQ(char *dat, s_smsq_t *sq)
-{
-int8_t ret = -1;
-int len = 0;
-
-	if (osSemaphoreAcquire(msgSem, 500) == osOK) {
-
-#ifdef SET_SMSQ_STATIC
-		len = strlen(sq->sms[sq->get].adr);
-		if (len) {
-			ret = sq->sms[sq->get].id;
-			memcpy(dat, sq->sms[sq->get].adr, len);
-			sq->sms[sq->get].adr[0] = '\0';
-		}
-#else
-		if (sq->sms[sq->get].adr != NULL) {
-			len = strlen(sq->sms[sq->get].adr);
-			ret = sq->sms[sq->get].id;
-			memcpy(dat, sq->sms[sq->get].adr, len);
-			freeMem(sq->sms[sq->get].adr);
-			sq->sms[sq->get].adr = NULL;
-		}
-#endif
-
-		if (ret >= 0) {
-			*(dat + len) = '\0';
-			sq->get++;
-			if (sq->get >= MAX_QSMS) sq->get = 0;
-		}
-
-		osSemaphoreRelease(msgSem);
-
-	}
-
-	return ret;
-}
-//------------------------------------------------------------------------------------------
-int8_t addToSMSQ(char *txt, uint16_t txt_len, s_smsq_t *sq)
-{
-int8_t nrec = -1;
-
-#ifdef SET_SMSQ_STATIC
-	if (txt_len >= SMS_BUF_LEN) {
-		txt_len = SMS_BUF_LEN - 1;
-		txt[txt_len] = '\0';
-	}
-	if ((nrec = putSMSQ(txt, sq)) >= 0) {
-		Report(true, "[%s] : add record OK (id=%d len=%d)\r\n", __func__, nrec, txt_len);
-	} else {
-		Report(true, "[%s] : add record error (len=%d)\r\n", __func__, txt_len);
-	}
-#else
-	int need_len = txt_len + 1;
-	if (need_len <= MAX_UART_BUF) need_len = MAX_UART_BUF;
-	char *rc = (char *)getMem((size_t)need_len);
-	if (rc) {
-		int got_len = strlen(rc);
-		if (got_len >= need_len) {
-			memcpy(rc, txt, txt_len);
-			*(rc + txt_len) = '\0';
-			if ((nrec = putSMSQ(rc, sq)) >= 0) {
-				Report(true, "[%s] : add sms_record OK (id=%d len=%d/%d)\r\n", __func__, nrec, need_len, got_len);
-		    } else {
-				Report(true, "[%s] : add sms_record error (len=%d/%d)\r\n", __func__, need_len, got_len);
-				freeMem(rc);
-			}
-		} else {
-			Report(true, "[%s] : error memory size %d != %d\r\n", __func__, need_len, got_len);
-			freeMem(rc);
-		}
-	} else Report(true, "[%s] : error get memory (len=%d)\r\n", __func__, need_len);
-#endif
-
-	return nrec;
-}
 //------------------------------------------------------------------------------------------
 void checkSMS(char *body, char *from)//  check : command present in sms ?
 {
@@ -2713,9 +2579,152 @@ void checkSMS(char *body, char *from)//  check : command present in sms ?
 		}
 	}
 }
-//-----------------------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 
 #endif
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+void initRECQ(s_recq_t *q)//s_recq_t recq;
+{
+	if (osSemaphoreAcquire(msgSem, 500) == osOK) {
+		q->put = q->get = 0;
+		for (uint8_t i = 0; i < MAX_QREC; i++) {
+			q->rec[i].id = i;
+#ifdef SET_RECQ_STATIC
+			q->rec[i].adr[0] = '\0';
+#else
+			q->rec[i].adr = NULL;
+#endif
+		}
+		osSemaphoreRelease(msgSem);
+	}
+}
+//-----------------------------------------------------------------------------
+void clearRECQ(s_recq_t *q)
+{
+	if (osSemaphoreAcquire(msgSem, 500) == osOK) {
+		q->put = q->get = 0;
+		for (uint8_t i = 0; i < MAX_QREC; i++) {
+			q->rec[i].id = i;
+#ifdef SET_RECQ_STATIC
+			q->rec[i].adr[0] = '\0';
+#else
+			freeMem(q->rec[i].adr);
+			q->rec[i].adr = NULL;
+#endif
+		}
+		osSemaphoreRelease(msgSem);
+	}
+}
+//-----------------------------------------------------------------------------
+int8_t putRECQ(char *adr, s_recq_t *q)
+{
+int8_t ret = -1;
+
+	if (osSemaphoreAcquire(msgSem, 500) == osOK) {
+
+#ifdef SET_RECQ_STATIC
+		if (!strlen(q->rec[q->put].adr)) {
+			int len = strlen(adr);
+			if (len >= SMS_BUF_LEN) len = SMS_BUF_LEN - 1;
+			memcpy((char *)&q->rec[q->put].adr[0], adr, len);
+			q->rec[q->put].adr[len] = '\0';
+#else
+		if (q->rec[q->put].adr == NULL) {
+			q->rec[q->put].adr = adr;
+#endif
+			ret = q->rec[q->put].id;
+			q->put++; if (q->put >= MAX_QREC) q->put = 0;
+		}
+
+		osSemaphoreRelease(msgSem);
+	}
+
+	return ret;
+}
+//-----------------------------------------------------------------------------
+int8_t getRECQ(char *dat, s_recq_t *q)
+{
+int8_t ret = -1;
+int len = 0;
+
+	if (osSemaphoreAcquire(msgSem, 500) == osOK) {
+
+#ifdef SET_RECQ_STATIC
+		len = strlen(q->rec[q->get].adr);
+		if (len) {
+			ret = q->rec[q->get].id;
+			memcpy(dat, q->rec[q->get].adr, len);
+			q->rec[q->get].adr[0] = '\0';
+		}
+#else
+		if (q->rec[q->get].adr != NULL) {
+			len = strlen(q->rec[q->get].adr);
+			ret = q->rec[q->get].id;
+			memcpy(dat, q->rec[q->get].adr, len);
+			freeMem(q->rec[q->get].adr);
+			q->rec[q->get].adr = NULL;
+		}
+#endif
+
+		if (ret >= 0) {
+			*(dat + len) = '\0';
+			q->get++;
+			if (q->get >= MAX_QREC) q->get = 0;
+		}
+
+		osSemaphoreRelease(msgSem);
+
+	}
+
+	return ret;
+}
+//------------------------------------------------------------------------------------------
+int8_t addRECQ(char *txt, s_recq_t *q)
+{
+int8_t nrec = -1;
+uint16_t txt_len = strlen(txt);
+
+#ifdef SET_RECQ_STATIC
+	if (txt_len >= REC_BUF_LEN) {
+		txt_len = REC_BUF_LEN - 1;
+		txt[txt_len] = '\0';
+	}
+	if ((nrec = putRECQ(txt, q)) >= 0) {
+		Report(true, "[%s] : put record to queue OK (id=%d len=%d)\r\n", __func__, nrec, txt_len);
+	} else {
+		Report(true, "[%s] : put record to queue error (len=%d)\r\n", __func__, txt_len);
+	}
+#else
+	int need_len = txt_len + 1;
+	if (need_len <= MAX_UART_BUF) need_len = MAX_UART_BUF;
+	char *rc = (char *)getMem((size_t)need_len);
+	if (rc) {
+		int got_len = strlen(rc);
+		if (got_len >= need_len) {
+			memcpy(rc, txt, txt_len);
+			*(rc + txt_len) = '\0';
+			if ((nrec = putRECQ(rc, q)) >= 0) {
+				Report(true, "[%s] : put record to queue OK (id=%d len=%d/%d)\r\n", __func__, nrec, need_len, got_len);
+		    } else {
+				Report(true, "[%s] : put record to queue error (len=%d/%d)\r\n", __func__, need_len, got_len);
+				freeMem(rc);
+			}
+		} else {
+			Report(true, "[%s] : error memory size %d != %d\r\n", __func__, need_len, got_len);
+			freeMem(rc);
+		}
+	} else Report(true, "[%s] : error get memory (len=%d)\r\n", __func__, need_len);
+#endif
+
+	return nrec;
+}
+
 
 //-----------------------------------------------------------------------------------------
 
@@ -2793,16 +2802,16 @@ void StartDefTask(void *argument)
   		}
   		//--------------------------------------------------------------------------
   		//
-  		osDelay(100);
+  		osDelay(50);
   		//
   		//-------------------------------------------------------------------------
   		//						get data from gps_queue
   		//
   		if (!flags.auto_cmd) {
-  			if (getQ(msgNMEA, &q_gps) >= 0) {
+  			if (getQ(DefBuf, &q_gps) >= 0) {
   				if (flags.log_show) stp = true; else stp = false;
-  				Report(stp, msgNMEA);
-  				if (!parse_inf(msgNMEA, &inf)) {
+  				Report(stp, DefBuf);
+  				if (!parse_inf(DefBuf, &inf)) {
   					flags.msg_end = 1;
   					memcpy((uint8_t *)&iData.inf, (uint8_t *)&inf, sizeof(s_inf_t));
   					new |= 2;
@@ -2843,12 +2852,12 @@ void StartDefTask(void *argument)
   		if (new == 3) {
   			new = 0;
   			if (!makeInfString(&iData, DefBuf, sizeof(DefBuf) - 3)) {
-  				addToSMSQ(DefBuf, strlen(DefBuf), &smsq);
+  				addRECQ(DefBuf, &recq);
   			}
   		}
   		//-------------------------------------------------------------------------
 
-  		osDelay(100);
+  		osDelay(50);
 
   	}
 
@@ -2981,8 +2990,6 @@ void StartAtTask(void *argument)
 	int dl, i, j, k;
 
 #ifdef SET_SMS
-//	initSMSQ(&smsq);//char *rc = (char *)pvPortMalloc(len); vPortFree(rc);
-//					//char *rc = (char *)calloc(1, len); free(rc);
 	char fromNum[lenFrom] = {0};
 	uint8_t abcd[5] = {0};
 	smsTMP[0] = 0;
@@ -3020,11 +3027,9 @@ void StartAtTask(void *argument)
 	}
 	bool prf = true;
 	uint32_t wait_csq = 0;
-
-//	uint8_t ready_to_send = 0;
+	uint32_t cmdDelay = 0;
 	uint16_t snd_len = 0;
 
-	uint32_t cmdDelay = 0;
 	wait_ack = get_tmr(2);
 
 
@@ -3157,32 +3162,17 @@ void StartAtTask(void *argument)
 				}
 				//
 				if (!yes) {
-					//if (!ready_to_send) {
-						if ((nrec = getSMSQ(msgGPRS, &smsq)) >= 0) {
-							//ready_to_send = 1;
-							snd_len = strlen(msgGPRS);
-							Report(true, "[getSMSQ] : get record OK (id=%d len=%u)\r\n", nrec , snd_len);
-							if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
-								sprintf(cmd, "AT+CIPSEND=%d\r\n", snd_len);
-								yes = true;
-								buff = cmd;
-								gprs_stat.next_send = 0;
-								//ready_to_send = 0;
-							} else if (flags.log_show) Report(true, "%s(%u)\r\n", msgGPRS, snd_len);
-						}
-					//}
-					/*
-					if (ready_to_send) {
+					if ((nrec = getRECQ(msgGPRS, &recq)) >= 0) {
+						snd_len = strlen(msgGPRS);
+						Report(true, "[getRECQ] : get record from queue OK (id=%d len=%u)\r\n", nrec , snd_len);
 						if (gprs_stat.connect && gprs_stat.send_ok && cmdsDone) {
 							sprintf(cmd, "AT+CIPSEND=%d\r\n", snd_len);
 							yes = true;
 							buff = cmd;
 							gprs_stat.next_send = 0;
-							ready_to_send = 0;
-						}
+						} else if (flags.log_show) Report(true, msgGPRS);
 					}
-					*/
-				}//if (!yes)
+				}
 				//
 				if (gprs_stat.prompt && gprs_stat.connect) {
 					yes = true;
@@ -3405,7 +3395,7 @@ void StartAtTask(void *argument)
 														*smsTMP = '\0';
 														if (!makeSMSString(SMS_text, &sms_len, fromNum, sms_num, smsTMP, sizeof(smsTMP) - 1)) {
 															//
-															if (addToSMSQ(smsTMP, sms_len, &smsq) < 0) {
+															if (addRECQ(smsTMP, &recq) < 0) {
 																if (flags.log_show) Report(true, smsTMP);
 															}
 															//
@@ -3422,12 +3412,9 @@ void StartAtTask(void *argument)
 										//-----------------------------------------------------------------------------
 										*smsTMP = '\0';
 										if (!makeSMSString(SMS_text, &sms_len, fromNum, sms_num, smsTMP, sizeof(smsTMP) - 1)) {
-
-											//
-											if (addToSMSQ(smsTMP, sms_len, &smsq) < 0) {
+											if (addRECQ(smsTMP, &recq) < 0) {
 												if (flags.log_show) Report(true, smsTMP);
 											}
-											//
 										}
 									}
 									//
@@ -3498,11 +3485,9 @@ void StartAtTask(void *argument)
 						//-----------------------------------------------------------------------------
 						*smsTMP = '\0';
 						if (!makeSMSString(SMS_text, &sms_len, fromNum, sms_num, smsTMP, sizeof(smsTMP) - 1)) {
-							//
-							if (addToSMSQ(smsTMP, sms_len, &smsq) < 0) {
+							if (addRECQ(smsTMP, &recq) < 0) {
 								if (flags.log_show) Report(true, smsTMP);
 							}
-							//
 						}
 					}
 				}
@@ -3535,7 +3520,7 @@ void StartAtTask(void *argument)
 
 	}
 
-	osDelay(100);
+	osDelay(50);
 	exit(0);
 	//LOOP_FOREVER();
 
