@@ -5,7 +5,7 @@
 
 	static s_udhi_t sms_rec[maxSMSPart];
 
-	const char *sim_auth_num = "79097965036";
+	const char *sim_auth_num = "79097960000";
 
 	const char *smsType[max_smsType] = {
 		"+CMT: ",
