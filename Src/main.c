@@ -236,8 +236,8 @@ const char *cmds[] = {
 	"AT+CSQ\r\n"//get RSSI
 };
 
-const char *sim_num = "+79062103497";
-const char *srv_adr_def = "95.30.186.127";
+const char *sim_num = "+79062100000";
+const char *srv_adr_def = "aaa.bbb.ccc.ddd";
 const uint16_t srv_port_def = 9192;
 static char srv_adr[16] = {0};
 static uint16_t srv_port;
