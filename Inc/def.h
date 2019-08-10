@@ -10,6 +10,7 @@
 #undef SET_STATIC_MEM_LOG	//use static/dynamic memmory
 
 #define SET_RECQ_STATIC
+
 //#define SET_CALLOC_MEM
 //#define SET_MALLOC_MEM
 

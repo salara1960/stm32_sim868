@@ -61,6 +61,7 @@ extern "C" {
 #define REC_BUF_LEN MAX_UART_BUF//600
 #define MAX_QMSG 8
 #define MAX_QREC 8
+#define size_imei 15
 
 #pragma pack(push,1)
 typedef struct {
@@ -195,36 +196,33 @@ typedef struct s_recq_t {
 } s_recq_t;
 #pragma pack(pop)
 
-//-------------------------------------------------------------------
-#ifdef SET_SMS
 
-#define SMS_BUF_LEN 512//600
-#define maxSMSPart 8
-#define MaxBodyLen 121//113
-
-#define cod_PDU_len 159 //137
-#define lenFrom 32
-#define wait_sms_time 60 * 3
-#define max_smsType 3
-
-#pragma pack(push,1)
-typedef struct s_udhi_t {
-	uint8_t tp;//0-обычная смс, 1-часть длинной смс, 255-квитанция
-	uint16_t num;//индекс (номер) смс
-	uint8_t total;//количество частей
-	uint8_t part;//номер части
-	uint16_t len;
-	char txt[MaxBodyLen];//121//113//[MaxBodyLen];//440 bytes
-} s_udhi_t;
-#pragma pack(pop)
-
-#endif
 //-------------------------------------------------------------------
 
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
+
+extern uint8_t evt_gsm;
+extern volatile bool LoopAll;
+extern bool con_dis;
+extern bool setDate;
+extern volatile s_flags flags;
+extern uint32_t infCounter;
+extern const char *dev_name;
+extern const char *sim_num;
+extern char devID[size_imei + 1];
+extern const char *Items[];
+#ifdef SET_JFES
+	extern jfes_config_t conf;
+	extern jfes_config_t *jconf;
+#endif
+#ifdef SET_RTC_TMR
+	extern RTC_HandleTypeDef hrtc;
+	extern uint32_t getSecRTC(RTC_HandleTypeDef *hrtc);
+#endif
+
 
 extern const uint32_t min_wait_ms;
 extern const uint32_t max_wait_ms;
@@ -247,9 +245,8 @@ extern SPI_HandleTypeDef *portSPI;
 
 
 #define wait_sensor_def 32
-#define wait_gps_def wait_sensor_def - 2 //>> 1
+#define wait_gps_def wait_sensor_def - 2
 #define wait_ack_cli_sec 10
-#define size_imei 15
 #define wait_csq_def wait_gps_def - 2
 #define max_rssi 32
 
@@ -260,6 +257,15 @@ extern SPI_HandleTypeDef *portSPI;
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
+
+extern void *getMem(size_t sz);
+extern void freeMem(void *ptr);
+extern uint32_t get_secCounter();
+#ifdef SET_RTC_TMR
+	extern uint32_t getSecRTC(&hrtc);
+#else
+	extern uint32_t get_extDate();
+#endif
 
 extern void Report(bool addTime, const char *fmt, ...);
 extern void errLedOn(const char *from);

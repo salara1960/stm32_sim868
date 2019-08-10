@@ -35,6 +35,7 @@
 "Src/freertos.o"
 "Src/jfes.o"
 "Src/main.o"
+"Src/sms.o"
 "Src/ssd1306_i2c.o"
 "Src/ssd1306_spi.o"
 "Src/stm32f4xx_hal_msp.o"
