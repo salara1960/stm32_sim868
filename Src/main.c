@@ -105,7 +105,8 @@
 //const char *ver = "ver 3.3rc2";//08.08.2019 - minor changes : check sms - in sms command present ?
 //const char *ver = "ver 3.4rc1";//08.08.2019 - minor changes : remove inf_data's queue, put inf_data to sms queue, support cmd via sms
 //const char *ver = "ver 3.4rc2";//09.08.2019 - minor changes : unused variables removed, add semaphore 'msgSem' for queue 'recq'
-const char *ver = "ver 3.5rc1";//10.08.2019 - minor changes : move sms functions to files (source and header)
+//const char *ver = "ver 3.5rc1";//10.08.2019 - minor changes : move sms functions to files (source and header)
+const char *ver = "ver 3.5rc2";//10.08.2019 - minor changes : edit gsmONOFF(ms) - ON/OFF function for sim868
 
 
 
@@ -164,7 +165,7 @@ osSemaphoreId_t binSemHandle;
 
 osSemaphoreId_t msgSem;
 
-const uint32_t ModuleOFF = 1750;
+const uint32_t ModuleOFF = 1650;
 const uint32_t ModuleON  = 1150;
 
 const char *dev_name = "STM32_SIM868";
@@ -207,6 +208,7 @@ const char *nameValid[] = {"Invaid", "Valid"};
 const char *nameNS[] = {"North" , "South"};
 const char *nameEW[] = {"East" , "West"};
 static bool onGNS = false;
+const char *strOnOff[] = {"OFF", "ON"};
 
 static char AtRxBuf[MAX_UART_BUF];
 volatile uint16_t at_rx_uk;
@@ -229,7 +231,7 @@ const char *cmds[] = {
 	"AT+GSN\r\n",//get IMEI
 	"AT+CNMI=1,2,0,1,0\r\n",
 	"AT+SCLASS0=0\r\n",
-	"AT+CMGF=0\r\n",//;+CLIP=1\r\n",
+	"AT+CMGF=0\r\n",
 	"AT+CGNSPWR=1\r\n",// power for GPS/GLONASS ON
 	"AT+CGNSPWR?\r\n",//check power for GPS/GLONASS status
 	"AT+CREG?\r\n",
@@ -256,6 +258,8 @@ const char *gpsINF = "AT+CGNSINF\r\n";
 const char *atCSQ = "AT+CSQ\r\n";
 bool con_dis = 0;
 const char *logStat[] = {"OFF", "ON"};
+
+static s_recq_t recq;
 
 const uint8_t maxItems = 27;//30;
 const char *Items[] = {
@@ -299,13 +303,11 @@ const int8_t dBmRSSI[max_rssi] = {
 	-65 ,-63 ,-61 ,-59 ,-57 ,-55 ,-53 ,-51
 };
 
-
 #ifdef SET_JFES
 	jfes_config_t conf;
 	jfes_config_t *jconf = NULL;
 #endif
 
-static s_recq_t recq;
 
 
 /* USER CODE END PV */
@@ -941,21 +943,43 @@ uint8_t ret = 0;
 }
 #endif
 //------------------------------------------------------------------------------------------
-void gsmONOFF(const uint32_t twait)
+inline void gsmONOFF(const uint32_t twait)
 {
-bool vio = getVIO();
-uint32_t tik = twait / 10, cnt = 10;
+bool wv, vio = getVIO();
+int one = 50;
+int cnt = twait / one;
+uint32_t start_tik = HAL_GetTick();
 
 	flags.log_show   = 0;
 	onGNS = false;
 
-	Report(true, "GSM_KEY set to 0 (vio=%u)\r\n", vio);
+	if (twait <= ModuleON) {
+		wv = true;
+		if (vio) goto done;
+	} else {
+		wv = false;
+		if (!vio) goto done;
+	}
+	Report(true, "[%s] GSM_KEY set to 0 (vio=%u)\r\n", strOnOff[wv], getVIO());
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);//set 0
+	start_tik = HAL_GetTick();
 
-	while ((vio == getVIO()) && cnt--) HAL_Delay(tik);
+	while (1) {
+		vio = getVIO();
+		if (wv) {//wait ON - getVIO() = true
+			if (vio) break;
+		} else {//wait OFF - getVIO() = false
+			if (!vio) break;
+		}
+		HAL_Delay(one);
+		cnt--;   if (cnt <= 0) break;
+	}
 
 	HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_SET);//set 1
-	Report(true, "GSM_KEY set to 1 (vio=%u)\r\n", getVIO());
+
+done:
+
+	Report(true, "[%s] VIO now is %u (wait %u ms)\r\n", strOnOff[wv], getVIO(), HAL_GetTick() - start_tik);
 
 	ackYes = 0;
 }
@@ -2002,21 +2026,21 @@ void StartDefTask(void *argument)
   		}
   		//
   		if (flags.stop) {
-  			flags.stop = 0;
   			if (gprs_stat.connect) flags.disconnect = 1;
   			sprintf(toScreen, "Stop All");
   			Report(true, "%s!\r\n", toScreen);
   			toDisplay((const char *)toScreen, 0, 5, false);
   			osDelay(1200);//1500
-  			gsmONOFF(ModuleOFF);
-  			uint8_t ct = 8;
-  			while (getVIO()) {
+  			if (getVIO()) {
   				gsmONOFF(ModuleOFF);
-  				osDelay(1200);
-  				ct--;
-  				if (!ct) break;
+  				uint8_t ct = 8;
+  				while (getVIO() && ct--) {
+  					gsmONOFF(ModuleOFF);
+  					HAL_Delay(4000);
+  				}
   			}
   			LoopAll = false;
+  			flags.stop = 0;
   			break;
   		}
   		//
@@ -2239,12 +2263,12 @@ void StartAtTask(void *argument)
 	toDisplay((const char *)toScr, 0, 2, false);
 #endif
 
-	uint8_t ctn = 5, faza = 0, rx_faza = 0;
+	uint8_t ctn = 8, faza = 0, rx_faza = 0;
 	uint32_t tmps = ModuleON;
 
 	bool vios = getVIO();
 	if (!vios) {
-		gsmONOFF(tmps);
+		while (!getVIO()) { gsmONOFF(tmps); HAL_Delay(2000); }
 	} else {
 		flags.auto_cmd = 1;
 		faza = 4;
@@ -2257,6 +2281,9 @@ void StartAtTask(void *argument)
 	uint32_t wait_csq = 0;
 	uint32_t cmdDelay = 0;
 	uint16_t snd_len = 0;
+	const uint32_t waitOff = 4000;
+	const uint32_t waitOn = 2000;
+	uint32_t wait_OnOff;
 
 	wait_ack = get_tmr(2);
 
@@ -2267,14 +2294,23 @@ void StartAtTask(void *argument)
 
 		//-----------------------------------------------------------
 		if (evt_gsm) {
-			if (evt_gsm == 2)
+			tmps = 0;
+			if (evt_gsm == 2) {
 				tmps = ModuleOFF;//OFF sim868
-			else
+				wait_OnOff = waitOff;
+			} else {
 				tmps = ModuleON;//ON sim868
-			vios = getVIO();
-			while ((vios == getVIO()) && ctn--) {
+				wait_OnOff = waitOn;
+			}
+			while (ctn--) {
+				vios = getVIO();
+				if (evt_gsm == 2) {//OFF
+					if (!vios) break;
+				} else {//ON
+					if (vios) break;
+				}
 				gsmONOFF(tmps);//   ```|_____|``` - make pulse duration tmps
-				osDelay(1500);
+				HAL_Delay(wait_OnOff);
 			};
 
 			AtParamInit(false);
@@ -2282,7 +2318,7 @@ void StartAtTask(void *argument)
 			gprs_stat.connect = 0;
 			flags.imei_flag   = 0;
 			flags.auto_cmd    = flags.inf = 0;
-			ctn = 5;
+			ctn = 8;
 			evt_gsm = 0;
 			faza = 0;
 			prf = true;
@@ -2451,11 +2487,13 @@ void StartAtTask(void *argument)
 				if (getQ(msgAT, &q_at) < 0) break;
 
 				if (strstr(msgAT, "NORMAL POWER DOWN")) {
-					HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
-					gprs_stat.init = gprs_stat.connect = 0;
-					wait_ack = get_tmr(4);
-					faza = 4;
-					prf = true;
+					if (!flags.stop) {
+						HAL_GPIO_WritePin(GPIO_PortD, LED_BLUE_Pin, GPIO_PIN_RESET);
+						gprs_stat.init = gprs_stat.connect = 0;
+						wait_ack = get_tmr(4);
+						faza = 4;
+						prf = true;
+					}
 				} else if (strlen(msgAT)) {
 					//
 					if (wait_ack_cli) wait_ack_cli = 0;
