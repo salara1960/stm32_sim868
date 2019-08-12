@@ -2,6 +2,7 @@ NAME=srv
 SRC=$(NAME).c
 
 CFLAG =-std=gnu99 -O0 -Wall -g -pipe -D_GNU_SOURCE -D_REENTERANT -I/usr/include
+LIBS=-ljansson -lpthread -ldl
 
 MACHINE := $(shell uname -m)
 
@@ -12,7 +13,7 @@ else
 endif
 
 $(NAME):
-	gcc -o $(NAME) $(SRC) $(CFLAG) -L$(LIBDIR) -ljansson -lpthread -ldl
+	gcc -o $(NAME) $(SRC) $(CFLAG) -L$(LIBDIR) $(LIBS)
 	strip $(NAME)
 clean:
 	rm -f $(NAME)

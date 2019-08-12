@@ -4,8 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
 #include <unistd.h>
 #include <signal.h>
 #include <fcntl.h>
@@ -18,25 +16,26 @@
 #include <sys/un.h>
 #include <errno.h>
 #include <sys/time.h>
-#include <sys/resource.h>
-#include <netdb.h>
 #include <arpa/inet.h>
 #include <ctype.h>
-#include <sys/msg.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
-#include <dirent.h>
-
+#include <stdarg.h>
 #include <jansson.h>
 
-#define LEN64 64
-#define LEN128 128
+
 #define LEN256 256
 #define LEN1K 1024
-#define buf_size (LEN1K << 1)
-#define TIME_STR_LEN LEN64
+#define LEN2K 2048
+#define buf_size LEN2K
+#define TIME_STR_LEN 64
 #define tmr_wait_def 90
 #define tcp_port_def 9192
+
+
+#define get_timer_sec(tm) ((unsigned int)time(NULL) + tm)
+#define check_delay_sec(tm) ((unsigned int)time(NULL) >= tm ? true : false)
+
 
 //--------------------------------------------------------------------
 
@@ -63,111 +62,103 @@ unsigned char SIGTRAPs = 1;
 static char dt_str[TIME_STR_LEN] = {0};
 
 const char *SeqNum = "SeqNum";
-//const char *SensSN = "SensSeqNum";
-//const char *GpsSN  = "GpsSeqNum";
-const char *DataSN = "DataSeqNum";
-const char *InfSN = "InfSeqNum";
 
 //------------------------------------------------------------------------
 char *TimeNowPrn(char *ts)
 {
 struct timeval tvl;
-int i_hour, i_min, i_sec, i_day, i_mes, mil;
 
     gettimeofday(&tvl, NULL);
-    time_t ct = tvl.tv_sec;
-    struct tm *ctimka = localtime(&ct);
-    i_hour = ctimka->tm_hour; i_min = ctimka->tm_min;     i_sec = ctimka->tm_sec;
-    i_day  = ctimka->tm_mday; i_mes = ctimka->tm_mon + 1; mil   = (int)(tvl.tv_usec / 1000);;
-    sprintf(ts,"%02d.%02d %02d:%02d:%02d.%03d | ", i_day, i_mes, i_hour, i_min, i_sec, mil);
+    struct tm *ctimka = localtime(&tvl.tv_sec);
+    sprintf(ts, "%02d.%02d %02d:%02d:%02d.%03d | ",
+                ctimka->tm_mday, ctimka->tm_mon + 1,
+                ctimka->tm_hour, ctimka->tm_min, ctimka->tm_sec, (int)(tvl.tv_usec / 1000));
 
     return ts;
 }
 //-----------------------------------------------------------------------
-void print_cdr(const char *st, unsigned char dt)
+void print_msg(unsigned char dt, const char *fmt, ...)
 {
-    if (dt) printf("%s",TimeNowPrn(dt_str));
-    printf("%s",st);
-    if (fd_log) {
-        if (dt) write(fd_log, TimeNowPrn(dt_str), strlen(dt_str));
-        write(fd_log, st, strlen(st));
+size_t len = LEN2K;
+char *st = (char *)calloc(1, len);
+
+    if (st) {
+        int dl = 0, sz;
+        va_list args;
+        if (dt) dl = sprintf(st, "%s", TimeNowPrn(dt_str));
+        sz = dl;
+        va_start(args, fmt);
+        sz += vsnprintf(st + dl, len - dl, fmt, args);
+        va_end(args);
+        printf("%s", st);
+        if (fd_log) write(fd_log, st, strlen(st));
+        free(st);
     }
-}
-//-----------------------------------------------------------------------
-static unsigned int get_timer_sec(unsigned int t)
-{
-    return ((unsigned int)time(NULL) + t);
-}
-//-----------------------------------------------------------------------
-static int check_delay_sec(unsigned int t)
-{
-    if ((unsigned int)time(NULL) >= t)  return 1; else return 0;
+
 }
 //--------------------  function for recive SIGNAL from system -----------
 void GetSignal_(int sig)
 {
 int out = 0;
-char st[LEN64];
 
     switch (sig) {
         case SIGHUP:
-            print_cdr("\tSignal SIGHUP\n",1);
+            print_msg(1, "\tSignal SIGHUP\n");
         break;
         case SIGKILL:
             if (SIGKILLs) {
                 SIGKILLs = 0;
-                print_cdr("\tSignal SIGKILL\n",1);
+                print_msg(1, "\tSignal SIGKILL\n");
                 out = 1;
             }
         break;
         case SIGPIPE:
-            print_cdr("\tSignal SIGPIPE\n",1);
+            print_msg(1, "\tSignal SIGPIPE\n");
         break;
         case SIGTERM:
             if (SIGTERMs) {
                 SIGTERMs = 0;
-                print_cdr("\tSignal SIGTERM\n",1);
+                print_msg(1, "\tSignal SIGTERM\n");
                 out = 1;
             }
         break;
         case SIGINT:
             if (SIGINTs) {
                 SIGINTs = 0;
-                print_cdr("\tSignal SIGINT\n",1);
+                print_msg(1, "\tSignal SIGINT\n");
                 out = 1;
             }
         break;
         case SIGSEGV:
             if (SIGSEGVs) {
                 SIGSEGVs = 0;
-                print_cdr("\tSignal SIGSEGV\n",1);
+                print_msg(1, "\tSignal SIGSEGV\n");
                 out = 1;
             }
         break;
         case SIGABRT:
             if (SIGABRTs) {
                 SIGABRTs = 0;
-                print_cdr("\tSignal SIGABRT\n",1);
+                print_msg(1, "\tSignal SIGABRT\n");
                 out = 1;
             }
         break;
         case SIGSYS:
             if (SIGSYSs) {
                 SIGSYSs = 0;
-                print_cdr("\tSignal SIGSYS\n",1);
+                print_msg(1, "\tSignal SIGSYS\n");
                 out = 1;
             }
         break;
         case SIGTRAP:
             if (SIGTRAPs) {
                 SIGTRAPs = 0;
-                print_cdr("\tSignal SIGTRAP\n",1);
+                print_msg(1, "\tSignal SIGTRAP\n");
                 out = 1;
             }
         break;
             default : {
-                sprintf(st,"\tUNKNOWN signal %d",sig);
-                print_cdr(st, 1);
+                print_msg(1, "\tUNKNOWN signal %d", sig);
             }
     }
 
@@ -179,32 +170,20 @@ int CheckPack(const char *js, char *packName)
 int ret = -1;
 json_t *obj = NULL, *tmp = NULL;
 json_error_t err;
-char *stx = NULL;
 
     if (strstr(js, SeqNum) == NULL) return ret;
 
     obj = json_loads(js, 0, &err);
     if (!obj) {
-        stx = (char *)calloc(1, strlen(err.text) + 64);
-        if (stx) {
-            sprintf(stx,"CheckPack parser error : on line %d: %s\n", err.line, err.text);
-            print_cdr(stx, 1);
-            free(stx);
-        }
+        print_msg(1, "CheckPack parser error : on line %d: %s\n", err.line, err.text);
         return ret;
     }
 
-    tmp = json_object_get(obj, DataSN);
+    tmp = json_object_get(obj, SeqNum);
     if (tmp) {
         ret = json_integer_value(tmp);
-        strcpy(packName, DataSN);
-    } else {
-        tmp = json_object_get(obj, InfSN);
-        if (tmp) {
-            ret = json_integer_value(tmp);
-            strcpy(packName, InfSN);
-        } else strcpy(packName, "Unknown");
-    }
+        strcpy(packName, SeqNum);
+    } else strcpy(packName, "Unknown");
 
     if (obj) json_decref(obj);
 
@@ -224,10 +203,10 @@ char numName[64];
 
     int client = *(int *)arg;
 
-    sprintf(chap,"Start thread with socket %d. Wait data %u sec. ...\n", client, tmr_wait);
-    print_cdr(chap, 1);
+    print_msg(1, "Start thread with socket %d. Wait data %u sec. ...\n", client, tmr_wait);
 
     uki = from_client;
+
     tmr = get_timer_sec(tmr_wait);
 
     while (!Vixod) {
@@ -258,14 +237,14 @@ char numName[64];
                 uki = strstr(from_client, "}\r\n");
                 if (uki) *(uki + 1) = 0;
                 strcat(from_client, "\n");
-                print_cdr(from_client, 1);
+                print_msg(1, from_client);
                 //
                 numName[0] = 0;
                 seqn = CheckPack(from_client, numName);
                 //
                 sprintf(from_client, "{\"PackNumber\":%lu,\"%s\":%d}\n", ++pack_number, numName, seqn);
                 send(client, from_client, strlen(from_client), MSG_DONTWAIT);
-                print_cdr(from_client, 1);
+                print_msg(1, from_client);
 
                 memset(from_client, 0, buf_size);
                 lenrecv = 0;
@@ -296,7 +275,7 @@ char numName[64];
         case 2 : sprintf(chap+strlen(chap), "[Timeout %d sec]\n", tmr_wait); break;
             default : sprintf(chap+strlen(chap), "[Global interrupt]\n");
     }
-    print_cdr(chap, 1);
+    print_msg(1, chap);
 
     pthread_exit(NULL);
 
@@ -308,7 +287,7 @@ int main (int argc, char *argv[])
 {
 time_t ttm;
 fd_set Fds;
-char *stri = NULL, *abra = NULL;
+char *abra = NULL;
 unsigned short tcp_port = tcp_port_def;
 struct sockaddr_in srv_conn, cli_conn;
 socklen_t srvlen, clilen;
@@ -316,23 +295,13 @@ struct timeval mytv;
 pthread_t tid;
 pthread_attr_t threadAttr;
 struct sigaction Act, OldAct;
-char stril[LEN64] = {0};
-char chap[LEN256] = {0};
-//char server_port[LEN64] = {0};
 int connsocket = -1, client = -1, resa, Vixod = 0, on = 1;
 unsigned char errs = 0;
 
-/*
-    if (argc < 2) {
-        printf("start server : ./srv 9292 45\n\n");
-        return 1;
-    }
-*/
 
     fd_log = open(the_log, O_WRONLY | O_APPEND | O_CREAT, 0664);
     if (fd_log < 0) {
-        sprintf(chap, "%s Can't open %s file (%d)\n", TimeNowPrn(dt_str), the_log, fd_log);
-        printf("%s", chap);
+        print_msg(1, "%s Can't open %s file (%d)\n", TimeNowPrn(dt_str), the_log, fd_log);
         return 1;
     }
 
@@ -350,13 +319,13 @@ unsigned char errs = 0;
         resa = atoi(argv[1]);
         if ((resa > 0) && (resa < 0xffff)) tcp_port = resa;
     }
-    if (argc > 2) {
+    if (argc > 2) {//max 180 sec
         resa = atoi(argv[2]);
-        if ((resa > 0) && (resa <= 120)) tmr_wait = resa;
+        if ((resa > 0) && (resa <= 180)) tmr_wait = resa;
     }
 
     //------------  set signals route function ------------------
-    memset((unsigned char *)&Act, 0, sizeof(struct sigaction));
+    memset((unsigned char *)&Act,    0, sizeof(struct sigaction));
     memset((unsigned char *)&OldAct, 0, sizeof(struct sigaction));
     Act.sa_handler = &GetSignal_;
     Act.sa_flags   = 0;
@@ -373,8 +342,7 @@ unsigned char errs = 0;
     ttm = time(NULL);
     abra = ctime(&ttm);
     abra[strlen(abra) - 1] = 0;
-    sprintf(chap,"%s Start server\n", abra);
-    print_cdr(chap, 1);
+    print_msg(1, "%s Start server\n", abra);
 
     //--------------------------------------------------------------------
 
@@ -384,15 +352,13 @@ unsigned char errs = 0;
         connsocket = socket(AF_INET, SOCK_STREAM, 6);
 
         if (connsocket < 0) {
-            sprintf(chap,"ERROR: open socket (%d)\n",connsocket);
-            print_cdr(chap, 1);
+            print_msg(1, "ERROR: open socket (%d)\n",connsocket);
             return 1;
         }
 
         on = 1;
         if (setsockopt(connsocket, SOL_SOCKET, SO_REUSEADDR,(const char *) &on, sizeof(on))) {
-            sprintf(chap,"ERROR: Setsockopt - SO_REUSEADDR (%d)\n",connsocket);
-            print_cdr(chap, 1);
+            print_msg(1, "ERROR: Setsockopt - SO_REUSEADDR (%d)\n",connsocket);
             return 1;
         }
 
@@ -403,24 +369,20 @@ unsigned char errs = 0;
         srv_conn.sin_port        = htons(tcp_port);
 
         if (bind(connsocket, (struct sockaddr *) &srv_conn, srvlen) == -1) {
-            sprintf(chap,"ERROR: Bind [port %d].\n", tcp_port);
-            print_cdr(chap, 1);
+            print_msg(1, "ERROR: Bind [port %d].\n", tcp_port);
             errs = 1;
             goto out_of_job;
         }
 
         if (listen(connsocket, 3) == -1) {
-            sprintf(chap,"ERROR: Listen [port %d].\n", tcp_port);
-            print_cdr(chap, 1);
+            print_msg(1, "ERROR: Listen [port %d].\n", tcp_port);
             errs = 1;
             goto out_of_job;
         }
 
         fcntl(connsocket, F_SETFL, (fcntl(connsocket, F_GETFL)) | O_NONBLOCK);
 
-        sprintf(chap,"Listen client [port %d timeout %u sec.]...\n", tcp_port, tmr_wait);
-        print_cdr(chap, 1);
-
+        print_msg(1, "Listen client [port %d timeout %u sec.]...\n", tcp_port, tmr_wait);
 
         pthread_attr_init(&threadAttr);
         pthread_attr_setdetachstate(&threadAttr, PTHREAD_CREATE_DETACHED);
@@ -439,16 +401,11 @@ unsigned char errs = 0;
                 client = accept(connsocket, (struct sockaddr *) &cli_conn, &clilen);
                 if (client > 0) {
                     fcntl(client, F_SETFL, (fcntl(client, F_GETFL)) | O_NONBLOCK);//set client socket to nonblocking mode
-                    memset(stril, 0, LEN64);
-                    stri = (char *)inet_ntoa(cli_conn.sin_addr);
-                    sprintf(stril, "%s", stri);
-                    sprintf(chap, "New client %s:%u online (socket %d)\n", stril, htons(cli_conn.sin_port), client);
-                    print_cdr(chap, 1);
+                    print_msg(1, "New client %s:%u online (socket %d)\n", (char *)inet_ntoa(cli_conn.sin_addr), htons(cli_conn.sin_port), client);
                    //------------------------------------------------------------
                    if (pthread_create(&tid, &threadAttr, cli_nitka, &client)) {//start client's thread to service the request
                         pthread_attr_destroy(&threadAttr);;
-                        sprintf(chap,"Error start thread for socket %d\n", client);
-                        print_cdr(chap, 1);
+                        print_msg(1, "Error start thread for socket %d\n", client);
                         if (client) {
                             close(client);
                             client = -1;
