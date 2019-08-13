@@ -24,40 +24,49 @@
 #include <jansson.h>
 
 
+#define WITH_KERNEL_TIMER
+
+
 #define LEN256 256
 #define LEN1K 1024
 #define LEN2K 2048
 #define buf_size LEN2K
 #define TIME_STR_LEN 64
-#define tmr_wait_def 90
 #define tcp_port_def 9192
 
 
-#define get_timer_sec(tm) ((unsigned int)time(NULL) + tm)
-#define check_delay_sec(tm) ((unsigned int)time(NULL) >= tm ? true : false)
+#define tmr_wait_def 90
 
+/*
+#define get_timer(tm) ((unsigned int)time(NULL) + tm)
+#define check_delay(tm) ((unsigned int)time(NULL) >= tm ? true : false)
+*/
 
 //--------------------------------------------------------------------
 
 
-unsigned int tmr_wait = tmr_wait_def;
+uint32_t tmr_wait = tmr_wait_def;
 pid_t pid_main;
 FILE *pid_fp = NULL;
 const char *pid_name = "srv.pid";
 const char *the_log = "logs.txt";
 int fd_log = -1;
+#ifdef WITH_KERNEL_TIMER
+    int fd_timer = -1;
+    const char *tmr_name = "/dev/tmr";
+#endif
 
-const unsigned int sizeofint = sizeof(unsigned int);
+const uint32_t sizeofint = sizeof(unsigned int);
 
-unsigned char QuitAll=0;
-unsigned char SIGHUPs = 1;
-unsigned char SIGTERMs = 1;
-unsigned char SIGINTs = 1;
-unsigned char SIGKILLs = 1;
-unsigned char SIGSEGVs = 1;
-unsigned char SIGABRTs = 1;
-unsigned char SIGSYSs = 1;
-unsigned char SIGTRAPs = 1;
+uint8_t QuitAll=0;
+uint8_t SIGHUPs = 1;
+uint8_t SIGTERMs = 1;
+uint8_t SIGINTs = 1;
+uint8_t SIGKILLs = 1;
+uint8_t SIGSEGVs = 1;
+uint8_t SIGABRTs = 1;
+uint8_t SIGSYSs = 1;
+uint8_t SIGTRAPs = 1;
 
 static char dt_str[TIME_STR_LEN] = {0};
 
@@ -77,7 +86,7 @@ struct timeval tvl;
     return ts;
 }
 //-----------------------------------------------------------------------
-void print_msg(unsigned char dt, const char *fmt, ...)
+void print_msg(uint32_t dt, const char *fmt, ...)
 {
 size_t len = LEN2K;
 char *st = (char *)calloc(1, len);
@@ -95,6 +104,34 @@ char *st = (char *)calloc(1, len);
         free(st);
     }
 
+}
+//-----------------------------------------------------------------------
+uint32_t get_timer(uint32_t t)
+{
+uint32_t ret = 0;
+#ifdef WITH_KERNEL_TIMER
+    if (fd_timer > 0) {
+        uint8_t one[8];
+        ret = (uint32_t)(read(fd_timer, one, 0) + t);
+    }
+#else
+    ret = (uint32_t)(time(NULL) + t);
+#endif
+    return ret;
+}
+//-----------------------------------------------------------------------
+int check_delay(uint32_t t)
+{
+uint32_t ret = 1;
+#ifdef WITH_KERNEL_TIMER
+    if (fd_timer > 0) {
+        uint8_t one[8];
+        if (read(fd_timer, one, 0) < t) ret = 0;
+    }
+#else
+    if ((uint32_t)time(NULL) < t) ret = 0;
+#endif
+    return ret;
 }
 //--------------------  function for recive SIGNAL from system -----------
 void GetSignal_(int sig)
@@ -196,7 +233,7 @@ char *uki = NULL;
 fd_set read_Fds;
 struct timeval cli_tv;
 int lenrecv = 0, tmp = 0, ready = 0, Vixod = 0, res = 0, seqn;
-unsigned long int tmr, pack_number = 0;
+uint32_t tmr, pack_number = 0;
 char from_client[buf_size];
 char chap[LEN256];
 char numName[64];
@@ -207,7 +244,7 @@ char numName[64];
 
     uki = from_client;
 
-    tmr = get_timer_sec(tmr_wait);
+    tmr = get_timer(tmr_wait);
 
     while (!Vixod) {
         cli_tv.tv_sec  = 0;
@@ -242,21 +279,21 @@ char numName[64];
                 numName[0] = 0;
                 seqn = CheckPack(from_client, numName);
                 //
-                sprintf(from_client, "{\"PackNumber\":%lu,\"%s\":%d}\n", ++pack_number, numName, seqn);
+                sprintf(from_client, "{\"PackNumber\":%u,\"%s\":%d}\n", ++pack_number, numName, seqn);
                 send(client, from_client, strlen(from_client), MSG_DONTWAIT);
                 print_msg(1, from_client);
 
                 memset(from_client, 0, buf_size);
                 lenrecv = 0;
                 uki = from_client;
-                tmr = get_timer_sec(tmr_wait);
+                tmr = get_timer(tmr_wait);
             }//ready
 
         }//select
 
         if (QuitAll) break;
         else {
-            if (check_delay_sec(tmr)) {
+            if (check_delay(tmr)) {
                 Vixod = 1;
                 res = 2;
             }
@@ -288,7 +325,7 @@ int main (int argc, char *argv[])
 time_t ttm;
 fd_set Fds;
 char *abra = NULL;
-unsigned short tcp_port = tcp_port_def;
+uint16_t tcp_port = tcp_port_def;
 struct sockaddr_in srv_conn, cli_conn;
 socklen_t srvlen, clilen;
 struct timeval mytv;
@@ -296,7 +333,8 @@ pthread_t tid;
 pthread_attr_t threadAttr;
 struct sigaction Act, OldAct;
 int connsocket = -1, client = -1, resa, Vixod = 0, on = 1;
-unsigned char errs = 0;
+uint8_t errs = 0;
+uint32_t tik = 0;
 
 
     fd_log = open(the_log, O_WRONLY | O_APPEND | O_CREAT, 0664);
@@ -325,8 +363,8 @@ unsigned char errs = 0;
     }
 
     //------------  set signals route function ------------------
-    memset((unsigned char *)&Act,    0, sizeof(struct sigaction));
-    memset((unsigned char *)&OldAct, 0, sizeof(struct sigaction));
+    memset((uint8_t *)&Act,    0, sizeof(struct sigaction));
+    memset((uint8_t *)&OldAct, 0, sizeof(struct sigaction));
     Act.sa_handler = &GetSignal_;
     Act.sa_flags   = 0;
     sigaction(SIGPIPE, &Act, &OldAct);
@@ -344,7 +382,18 @@ unsigned char errs = 0;
     abra[strlen(abra) - 1] = 0;
     print_msg(1, "%s Start server\n", abra);
 
+#ifdef WITH_KERNEL_TIMER
+    //--------------------  open TMR device  -----------------------------
+    if ((fd_timer = open(tmr_name, O_RDWR) ) < 0) {
+        print_msg(1, "Can't open device '%s' (%s)\n", tmr_name, strerror(errno));
+        if (pid_main) unlink(pid_name);
+        if (fd_log > 0) close(fd_log);
+    } else {
+        tik = get_timer(0);
+        print_msg(1, "Open device '%s' OK (sec=%u)\n", tmr_name, tik);
+    }
     //--------------------------------------------------------------------
+#endif
 
     while (!QuitAll) {
 
@@ -401,7 +450,9 @@ unsigned char errs = 0;
                 client = accept(connsocket, (struct sockaddr *) &cli_conn, &clilen);
                 if (client > 0) {
                     fcntl(client, F_SETFL, (fcntl(client, F_GETFL)) | O_NONBLOCK);//set client socket to nonblocking mode
-                    print_msg(1, "New client %s:%u online (socket %d)\n", (char *)inet_ntoa(cli_conn.sin_addr), htons(cli_conn.sin_port), client);
+                    tik = get_timer(0);
+                    print_msg(1, "New client %s:%u online (socket %d) (sec=%u)\n",
+                                 (char *)inet_ntoa(cli_conn.sin_addr), htons(cli_conn.sin_port), client, tik);
                    //------------------------------------------------------------
                    if (pthread_create(&tid, &threadAttr, cli_nitka, &client)) {//start client's thread to service the request
                         pthread_attr_destroy(&threadAttr);;
@@ -435,6 +486,11 @@ out_of_job:
 
     }//while(1<2)
 
+    print_msg(1, "Main done (sec=%u)\n", get_timer(0));
+
+#ifdef WITH_KERNEL_TIMER
+    if (fd_timer > 0) close(fd_timer);
+#endif
 
     if (pid_main) unlink(pid_name);
 
