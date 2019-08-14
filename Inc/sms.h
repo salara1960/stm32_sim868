@@ -5,9 +5,7 @@
 
 #ifdef SET_SMS
 
-#include "main.h"
-#include "cmsis_os.h"
-#include "ssd1306.h"
+#include "libs.h"
 
 #define SMS_BUF_LEN 512//600
 #define maxSMSPart 8

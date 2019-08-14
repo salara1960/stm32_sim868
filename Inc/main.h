@@ -42,6 +42,7 @@ extern "C" {
 #include <time.h>
 #include <math.h>
 #include <stdarg.h>
+#include "cmsis_os.h"
 #include "def.h"
 
 #ifdef SET_JFES
@@ -204,25 +205,43 @@ typedef struct s_recq_t {
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
 
+extern osSemaphoreId_t binSemHandle;//semaphore for Report(...)
+extern bool onGNS;
+extern bool ackYes;
+extern const char *strOnOff[];
+extern const uint32_t ModuleOFF;
+extern const uint32_t ModuleON;
+extern s_gsm_stat gsm_stat;
+extern char srv_adr[16];
+extern uint16_t srv_port;
+extern osSemaphoreId_t msgSem;
+extern const char *sim_num;
+extern char AtRxBuf[MAX_UART_BUF];
+extern volatile uint16_t at_rx_uk;
+extern int8_t cmdsInd;
+extern s_msg_t q_at;
+extern s_msg_t q_cmd;
+extern UART_HandleTypeDef *portAT;//huart4;
+extern uint8_t aRxByte;
+extern uint32_t infCounter;
+
+
 extern uint8_t evt_gsm;
 extern volatile bool LoopAll;
 extern bool con_dis;
 extern bool setDate;
 extern volatile s_flags flags;
-extern uint32_t infCounter;
 extern const char *dev_name;
-extern const char *sim_num;
 extern char devID[size_imei + 1];
-extern const char *Items[];
+
 #ifdef SET_JFES
 	extern jfes_config_t conf;
 	extern jfes_config_t *jconf;
 #endif
+
 #ifdef SET_RTC_TMR
 	extern RTC_HandleTypeDef hrtc;
-	extern uint32_t getSecRTC(RTC_HandleTypeDef *hrtc);
 #endif
-
 
 extern const uint32_t min_wait_ms;
 extern const uint32_t max_wait_ms;
@@ -248,7 +267,6 @@ extern SPI_HandleTypeDef *portSPI;
 #define wait_gps_def wait_sensor_def - 2
 #define wait_ack_cli_sec 10
 #define wait_csq_def wait_gps_def - 2
-#define max_rssi 32
 
 
 /* USER CODE END EM */
@@ -257,19 +275,6 @@ extern SPI_HandleTypeDef *portSPI;
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-
-extern void *getMem(size_t sz);
-extern void freeMem(void *ptr);
-extern uint32_t get_secCounter();
-#ifdef SET_RTC_TMR
-	extern uint32_t getSecRTC(&hrtc);
-#else
-	extern uint32_t get_extDate();
-#endif
-
-extern void Report(bool addTime, const char *fmt, ...);
-extern void errLedOn(const char *from);
-extern void Leds(bool act, uint16_t Pin);
 
 /* USER CODE END EFP */
 

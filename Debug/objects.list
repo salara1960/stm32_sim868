@@ -34,6 +34,7 @@
 "Src/font.o"
 "Src/freertos.o"
 "Src/jfes.o"
+"Src/libs.o"
 "Src/main.o"
 "Src/sms.o"
 "Src/ssd1306_i2c.o"

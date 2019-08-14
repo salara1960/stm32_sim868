@@ -4,7 +4,7 @@
 #ifdef SET_SMS
 
 static s_udhi_t sms_rec[maxSMSPart];
-const char *sim_auth_num = "79097960000";
+const char *sim_auth_num = "79097965036";
 const char *eolin = "\r\n";
 int TSINPART = 0;//from, date/time are present in part 1 sms only, if sms without udhi -> from, date/time not present
 char SMS_text[SMS_BUF_LEN];
