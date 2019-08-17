@@ -103,7 +103,9 @@
 //const char *ver = "ver 3.4rc2";//09.08.2019 - minor changes : unused variables removed, add semaphore 'msgSem' for queue 'recq'
 //const char *ver = "ver 3.5rc1";//10.08.2019 - minor changes : move sms functions to files (source and header)
 //const char *ver = "ver 3.5rc2";//10.08.2019 - minor changes : edit gsmONOFF(ms) - ON/OFF function for sim868
-const char *ver = "ver 3.6rc1";//14.08.2019 - minor changes : move any general functions to files (source and header)
+//const char *ver = "ver 3.6rc1";//14.08.2019 - minor changes : move any general functions to files (source and header)
+//const char *ver = "ver 3.6rc2";//15.08.2019 - minor changes : testing with tcp-server (srv with kernel timer device driver)
+const char *ver = "ver 3.7rc1";//17.08.2019 - minor changes for sms recv. : convert ucs2 to utf8 done !!!
 
 
 
@@ -231,8 +233,8 @@ const char *cmds[] = {
 	"AT+CSQ\r\n"//get RSSI
 };
 
-const char *sim_num = "+79062103497";
-const char *srv_adr_def = "95.30.186.127";
+const char *sim_num = "+79062100000";
+const char *srv_adr_def = "aaa.bbb.ccc.ddd";
 const uint16_t srv_port_def = 9192;
 char srv_adr[16] = {0};
 uint16_t srv_port;
@@ -1743,7 +1745,7 @@ void StartAtTask(void *argument)
 						uke = strstr(uks, "\", 72");
 						if (uke) {
 							*uke = '\0';
-							if (ucs2_to_text(uks, (uint8_t *)SMS_text)) Report(false, "%s\r\n", SMS_text);
+							if (ucs2_to_utf8(uks, NULL, (uint8_t *)SMS_text)) Report(false, "%s\r\n", SMS_text);
 						}
 						*msgAT = '\0';
 					}

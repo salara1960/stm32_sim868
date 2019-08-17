@@ -4,7 +4,7 @@
 #ifdef SET_SMS
 
 static s_udhi_t sms_rec[maxSMSPart];
-const char *sim_auth_num = "79097965036";
+const char *sim_auth_num = "79097960000";
 const char *eolin = "\r\n";
 int TSINPART = 0;//from, date/time are present in part 1 sms only, if sms without udhi -> from, date/time not present
 char SMS_text[SMS_BUF_LEN];
@@ -35,31 +35,15 @@ const char *type_name_a[9] = {
 	"???"
 };
 
-char alphabet[] = "@ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 !\"#$%&'()*+,-./:;<=>?АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя\n\r`эijIЭ";
-
-uint16_t cod_PDU[] = {
-	0x0040,0x0041,0x0042,0x0043,0x0044,0x0045,0x0046,0x0047,0x0048,0x0049,0x004A,0x004B,0x004C,0x004D,0x004E,0x004F,
-	0x0050,0x0051,0x0052,0x0053,0x0054,0x0055,0x0056,0x0057,0x0058,0x0059,0x005A,0x0061,0x0062,0x0063,0x0064,0x0065,
-	0x0066,0x0067,0x0068,0x0069,0x006A,0x006B,0x006C,0x006D,0x006E,0x006F,0x0070,0x0071,0x0072,0x0073,0x0074,0x0075,
-	0x0076,0x0077,0x0078,0x0079,0x007A,0x0030,0x0031,0x0032,0x0033,0x0034,0x0035,0x0036,0x0037,0x0038,0x0039,0x0020,
-	0x0021,0x0022,0x0023,0x0024,0x0025,0x0026,0x0027,0x0028,0x0029,0x002A,0x002B,0x002C,0x002D,0x002E,0x002F,0x003A,
-	0x003B,0x003C,0x003D,0x003E,0x003F,
-	0x0410,0x0411,0x0412,0x0413,0x0414,0x0415,0x0401,0x0416,0x0417,0x0418,0x0419,0x041A,0x041B,0x041C,0x041D,0x041E,
-	0x041F,0x0420,0x0421,0x0422,0x0423,0x0424,0x0425,0x0426,0x0427,0x0428,0x0429,0x042A,0x042B,0x042C,0x042D,0x042E,
-	0x042F,0x0430,0x0431,0x0432,0x0433,0x0434,0x0435,0x00B8,0x0436,0x0437,0x0438,0x0439,0x043A,0x043B,0x043C,0x043D,
-	0x043E,0x043F,0x0440,0x0441,0x0442,0x0443,0x0444,0x0445,0x0446,0x0447,0x0448,0x0449,0x044A,0x044B,0x044C,0x044D,
-	0x044E,0x044F,0x000A,0x000D,0x0060,0x0454,0x0456,0x0457,0x0406,0x0404
-};
-
 //------------------------------------------------------------------------------------------
 uint8_t hextobin(char st, char ml)
 {
 const char hex[16] = {'0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'};
-uint8_t a, b, c, i;
+uint8_t a = 255, b, c, i;
 
 	for	(i = 0; i < 16; i++) { if (st == hex[i]) { b = i; break; } else b = 255; }
 	for	(i = 0; i < 16; i++) { if (ml == hex[i]) { c = i; break; } else c = 255; }
-	if ((b == 255) || (c == 255)) a = 255; else { b = b << 4;   a = b | c; }
+	if ((b != 255) && (c != 255)) { b = b << 4;   a = b | c; }
 
 	return a;
 }
@@ -190,8 +174,8 @@ uint8_t words[4] = {0};
 //----------------------------------------------------------------------------------
 int conv_ucs2_text(uint8_t *buffer_txt, char *fromik, uint8_t *udhi5, uint8_t prn)
 {
-int ret = 0;
-int tt, tt1 = 0, tt_n, tt1_n, len, i = 0, j = 0, k = 0, shift, yes, it = 0, tzone, end_ind = 0;
+int ret = 0;//, yes;
+int tt, tt1 = 0, tt_n, tt1_n, len, i = 0, j = 0, k = 0, shift, it = 0, tzone, end_ind = 0;
 char *ps1, *ps_begin, *ps3, *uk_start, *pss, *pss0, *ps_o, *ps_type, *ina2, *qik, *ps0;
 char *uk_start7 = NULL;
 char *ina = NULL;
@@ -494,24 +478,8 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 				}
 			}
 
-			while (1) {
-				ps1 = (char *)&buffer_txt[tt];
-				memset(words, 0, sizeof(words));
-				memcpy(words, ps1, 4);
-				yes = 0;
-				for (j = 0; j < cod_PDU_len; j++) {
-					sprintf(chcs, "%04X", cod_PDU[j]);
-					if (!strncmp(words, chcs, 4)) {
-						yes = 1;
-						it = j;
-						break;
-					}
-				}
-				if (yes == 1) buffer_temp[tt1++] = alphabet[it];
-					     else buffer_temp[tt1++] = '.';
-				tt += 4;   dl_ind++;
-				if (((tt + 4) > len) || (dl_ind > dl)) break;
-			}
+			dl_ind = ucs2_to_utf8((char *)&buffer_txt[tt], &user_data_len, &buffer_temp[tt1]);
+			tt1 += dl_ind;
 		} else {//if (pdu == 1)
 			switch (ind_tp) {
 				case 0 ://7 bit encoding
@@ -585,11 +553,10 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 				udhi_4[3] = hextobin(udhi_str[b + 2], udhi_str[b + 3]); //total
 				udhi_4[4] = hextobin(udhi_str[b + 4], udhi_str[b + 5]); //part
 			}
-		//}
+
 			a = udhi_4[1];   udhi_4[1] = udhi_4[2];   udhi_4[2] = a;//swapbytes in sms_num
 			memcpy(udhi5, udhi_4, 5);
 
-		//if (with_udh) {
 			if (TSINPART) {
 				end_ind = 0;
 			} else {
@@ -603,7 +570,7 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
 
 		it = SMS_BUF_LEN - 1 - end_ind;
 
-		//memset(buffer_txt, 0, SMS_BUF_LEN);
+		memset(buffer_txt, 0, SMS_BUF_LEN);
 		memcpy(buffer_txt, &buffer_temp[end_ind], it);
 
 		if (with_udh && prn) Report(false,"UDH(%d): [%s]\r\n", udhi_len, udhi_str);
@@ -615,39 +582,33 @@ uint8_t buffer_temp[SMS_BUF_LEN] = {0};
  	return ret;
 }
 //-----------------------------------------------------------------------------------------
-int ucs2_to_text(char *buf_in, uint8_t *buf_out)
+int ucs2_to_utf8(char *buf_in, uint8_t *udl, uint8_t *utf8)
 {
-	if (!buf_in) return 0;
-	int len = strlen(buf_in);	if (!len) return 0;
+int ret = 0, i = 0, len;
+uint8_t a, b;
+char *ptr = buf_in;
+uint8_t *out = utf8;
+uint16_t ucs2;
 
-	int dl_ind = 0, yes, it = 0, j, tt = 0, tt1 = 0;
-	char words[5] = {0}, tmp[5];
 
-    while (1) {
-    	memcpy(words, &buf_in[tt], 4);
-    	yes = 0;
-    	for (j = 0; j < cod_PDU_len; j++) {
-    		sprintf(tmp,"%04X", cod_PDU[j]);
-    		if (!strncmp(words, tmp, 4)) {
-    			yes = 1;
-    			it = j;
-    			break;
-    		}
-    	}
-    	if (yes) {
-    		buf_out[tt1++] = alphabet[it];
+	if (!udl) len = strlen(buf_in) >> 2; else len = *udl >> 1;
+
+    while (i < len) {
+    	a = hextobin(*ptr, *(ptr + 1));   ptr += 2;
+    	b = hextobin(*ptr, *(ptr + 1));   ptr += 2;
+    	ucs2 = a;   ucs2 <<= 8;   ucs2 |= b;
+    	if (ucs2 < 0x80) {
+    		*out++ = (uint8_t)ucs2;
+    		ret++;
     	} else {
-    		buf_out[tt1++] = '.';
+    		*out++ = (uint8_t)((ucs2 >> 6)   | 0xC0);
+    		*out++ = (uint8_t)((ucs2 & 0x3F) | 0x80);
+    		ret += 2;
     	}
-
-    	tt += 4;
-    	dl_ind++;
-    	if (tt >= len) break;
+    	i++;
     }
 
-    buf_out[dl_ind] = '\0';
-
-    return dl_ind;
+    return ret;
 }
 //-----------------------------------------------------------------------------------------
 int8_t makeSMSString(const char *body, uint16_t *blen, char *fnum, uint16_t snum, char *buf, int max_len_buf)

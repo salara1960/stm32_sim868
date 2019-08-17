@@ -47,11 +47,11 @@ extern bool check_tmr(uint32_t sec);
 extern uint64_t get_hstmr(uint64_t hs);
 extern bool check_hstmr(uint64_t hs);
 
-
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 	extern uint8_t ssd1306_calcx(int len);
 	extern void toDisplay(const char *st, uint8_t column, uint8_t line, bool clear);
 #endif
+
 extern int8_t parse_inf(char *in, s_inf_t *inf);
 extern int8_t makeInfString(const s_data_t *data, char *buf, int max_len_buf);
 extern void getAdrPort(char *uk);
