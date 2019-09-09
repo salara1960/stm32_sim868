@@ -19,8 +19,8 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-
 #include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -30,6 +30,10 @@
 
 #ifdef SET_SMS
 	#include "sms.h"
+#endif
+
+#ifdef SET_W25FLASH
+	#include "w25.h"
 #endif
 
 //const char *ver = "ver 1.0rc1";//04.05.2019 - first working release
@@ -105,8 +109,8 @@
 //const char *ver = "ver 3.5rc2";//10.08.2019 - minor changes : edit gsmONOFF(ms) - ON/OFF function for sim868
 //const char *ver = "ver 3.6rc1";//14.08.2019 - minor changes : move any general functions to files (source and header)
 //const char *ver = "ver 3.6rc2";//15.08.2019 - minor changes : testing with tcp-server (srv with kernel timer device driver)
-const char *ver = "ver 3.7rc1";//17.08.2019 - minor changes for sms recv. : convert ucs2 to utf8 done !!!
-
+//const char *ver = "ver 3.7rc1";//17.08.2019 - minor changes for sms recv. : convert ucs2 to utf8 done !!!
+const char *ver = "ver 3.8rc1";//09.09.2019 - major changes : add data flash chip W25Q64 (used SPI1 and PA4-CS_CHIP pin ) - first step
 
 
 /*
@@ -144,6 +148,7 @@ I2C_HandleTypeDef hi2c1;
 
 RTC_HandleTypeDef hrtc;
 
+SPI_HandleTypeDef hspi1;
 SPI_HandleTypeDef hspi3;
 DMA_HandleTypeDef hdma_spi3_tx;
 
@@ -159,7 +164,6 @@ osThreadId_t sensTaskHandle;
 osThreadId_t atTaskHandle;
 osMessageQueueId_t mailQueueHandle;
 osSemaphoreId_t binSemHandle;
-
 /* USER CODE BEGIN PV */
 
 osSemaphoreId_t msgSem;
@@ -184,6 +188,10 @@ UART_HandleTypeDef *portAT;//huart4;
 UART_HandleTypeDef *portLOG;//huart3;
 #ifdef SET_OLED_SPI
 	SPI_HandleTypeDef *portOLED;//hspi3;
+#endif
+
+#ifdef SET_W25FLASH
+SPI_HandleTypeDef *portFLASH = NULL;//hspi1;
 #endif
 
 static const char *_extDate = ":DATE=";
@@ -272,6 +280,7 @@ static void MX_UART4_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_SPI3_Init(void);
 static void MX_RTC_Init(void);
+static void MX_SPI1_Init(void);
 void StartDefTask(void *argument); // for v2
 void StartSensTask(void *argument); // for v2
 void StartAtTask(void *argument); // for v2
@@ -321,6 +330,7 @@ int main(void)
   MX_USART3_UART_Init();
   MX_SPI3_Init();
   MX_RTC_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
 
   portBMP = &hi2c1;//BMP280
@@ -346,6 +356,10 @@ int main(void)
   spi_ssd1306_init();//screen INIT
   spi_ssd1306_pattern();//set any params for screen
   spi_ssd1306_clear();//clear screen
+#endif
+
+#ifdef SET_W25FLASH
+  portFLASH = &hspi1;//SPI1 - W25Q64 data flash chip
 #endif
 
     bh1750_off();
@@ -611,6 +625,44 @@ static void MX_RTC_Init(void)
 }
 
 /**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
   * @brief SPI3 Initialization Function
   * @param None
   * @retval None
@@ -807,7 +859,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GSM_KEY_GPIO_Port, GSM_KEY_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GSM_KEY_Pin|W25_CS_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, LED_GREEN_Pin|LED_ORANGE_Pin|LED_RED_Pin|LED_BLUE_Pin, GPIO_PIN_RESET);
@@ -824,12 +876,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : GSM_KEY_Pin */
-  GPIO_InitStruct.Pin = GSM_KEY_Pin;
+  /*Configure GPIO pins : GSM_KEY_Pin W25_CS_Pin */
+  GPIO_InitStruct.Pin = GSM_KEY_Pin|W25_CS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GSM_KEY_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LED_GREEN_Pin LED_ORANGE_Pin LED_RED_Pin LED_BLUE_Pin */
   GPIO_InitStruct.Pin = LED_GREEN_Pin|LED_ORANGE_Pin|LED_RED_Pin|LED_BLUE_Pin;

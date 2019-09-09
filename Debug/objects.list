@@ -44,4 +44,5 @@
 "Src/stm32f4xx_it.o"
 "Src/syscalls.o"
 "Src/system_stm32f4xx.o"
+"Src/w25.o"
 "startup/startup_stm32f407xx.o"

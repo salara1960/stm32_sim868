@@ -257,6 +257,10 @@ extern SPI_HandleTypeDef *portSPI;
 	extern SPI_HandleTypeDef *portOLED;
 #endif
 
+#ifdef SET_W25FLASH
+	extern SPI_HandleTypeDef *portFLASH;
+#endif
+
 /* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/
@@ -285,6 +289,14 @@ void Error_Handler(void);
 #define GSM_STATUS_GPIO_Port GPIOA
 #define GSM_KEY_Pin GPIO_PIN_3
 #define GSM_KEY_GPIO_Port GPIOA
+#define W25_CS_Pin GPIO_PIN_4
+#define W25_CS_GPIO_Port GPIOA
+#define W25_SCK_Pin GPIO_PIN_5
+#define W25_SCK_GPIO_Port GPIOA
+#define W25_MISO_Pin GPIO_PIN_6
+#define W25_MISO_GPIO_Port GPIOA
+#define W25_MOSI_Pin GPIO_PIN_7
+#define W25_MOSI_GPIO_Port GPIOA
 #define TX3_Pin GPIO_PIN_10
 #define TX3_GPIO_Port GPIOB
 #define RX3_Pin GPIO_PIN_11

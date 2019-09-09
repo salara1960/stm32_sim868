@@ -15,5 +15,6 @@
 //#define SET_MALLOC_MEM
 
 #define SET_SMS
+#define SET_W25FLASH
 
 #endif
