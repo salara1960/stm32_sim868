@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# stm32f4 + sim868 (gsm,gps) + ssd1306(i2c&spi) + bmp280(i2c) + bh1750(i2c)
+# stm32f4 + sim868 (gsm,gps) + ssd1306(i2c&spi) + bmp280(i2c) + bh1750(i2c) + w25q64
 #
 #################################################################################################
 
@@ -13,6 +13,7 @@
 * bmp280 - atmospheric pressure and air temperature sensor (I2C interface).
 * bh1750 - light sensor (I2C interface).
 * sim868 - card with SIM868 module (SIMCOM).
+* w25q64 - data falsh (SPI interface).
 ```
 
 
@@ -44,6 +45,7 @@
   - TIM2 : Timer 250 ms. and 1 second, implemented in the callback function.
   - RTC : real time clock, can be set using the command :DATE=epoch_time
   - SPI3 : serves OLED SSD1306: RST (PC11), DC (PB6), CS (PB4), SCK (PB3), MOSI (PC12).
+  - SPI1 : serves data-flash w25q64 : CS(PA4), SCK(PA5), MISO(PA6), MOSI(PA7).
 * The system timer (TIM1) counts milliseconds from the start of operation of the device.
 * Data reception on all serial ports (USART3, UART4) is performed in the callback function of the interrupt handler.
   Received data is transferred to the corresponding tasks through structural queues.

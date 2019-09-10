@@ -122,6 +122,7 @@ typedef struct {
 	unsigned inf:1;
 	unsigned vio:1;
 	unsigned sms:1;
+	unsigned chip_id:1;
 } s_flags;
 #pragma pack(pop)
 

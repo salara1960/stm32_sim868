@@ -111,7 +111,8 @@
 //const char *ver = "ver 3.6rc2";//15.08.2019 - minor changes : testing with tcp-server (srv with kernel timer device driver)
 //const char *ver = "ver 3.7rc1";//17.08.2019 - minor changes for sms recv. : convert ucs2 to utf8 done !!!
 //const char *ver = "ver 3.8rc1";//09.09.2019 - major changes : add data flash chip W25Q64 (used SPI1 and PA4-CS_CHIP pin ) - first step
-const char *ver = "ver 3.8rc2";//10.09.2019 - major changes : read data flash chip ID - next step
+//const char *ver = "ver 3.8rc2";//10.09.2019 - major changes : read data flash chip ID - next step
+const char *ver = "ver 3.8rc3";//10.09.2019 - minor changes : edit README
 
 
 /*
@@ -361,6 +362,7 @@ int main(void)
 
 #ifdef SET_W25FLASH
   portFLASH = &hspi1;//SPI1 - W25Q64 data flash chip
+  W25_UNSELECT();
 #endif
 
     bh1750_off();
@@ -975,6 +977,11 @@ void LogData()
 			} else setDate = true;
 			evt_clear = true;
 		} else {
+#ifdef SET_W25FLASH
+			if (strstr(RxBuf, ":CID")) {//read chip ID W25QXX
+				flags.chip_id = 1; priz = 1;
+			} else
+#endif
 			if (strstr(RxBuf, ":INF")) {
 				flags.inf = 1; priz = 1;
 			} else if (strstr(RxBuf, ":GET")) {
@@ -1215,6 +1222,14 @@ void StartDefTask(void *argument)
 
   		osDelay(100);
 
+  		//--------------------------------------------------------------------------
+#ifdef SET_W25FLASH
+  		if (flags.chip_id) {
+  			flags.chip_id = 0;
+  			W25qxx_Init();
+  		}
+#endif
+  		//--------------------------------------------------------------------------
   	}
 
   	osDelay(100);
