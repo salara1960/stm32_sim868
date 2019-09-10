@@ -44,7 +44,7 @@ typedef struct {
 #pragma pack(pop)
 
 
-#define _W25QXX_DEBUG        1
+#define _W25QXX_DEBUG 1
 #define W25QXX_DUMMY_BYTE 0xA5
 
 #define W25qxx_Delay(delay) osDelay(delay)

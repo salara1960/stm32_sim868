@@ -11,9 +11,11 @@ w25qxx_t w25qxx;
 //------------------------------------------------------------------------------------------
 uint8_t W25qxx_Spi(uint8_t Data)
 {
-    uint8_t ret;
-    HAL_SPI_TransmitReceive(portFLASH, &Data, &ret, 1, 10);
-    return ret;
+uint8_t ret;
+
+	HAL_SPI_TransmitReceive(portFLASH, &Data, &ret, 1, HAL_MAX_DELAY);
+
+	return ret;
 }
 //------------------------------------------------------------------------------------------
 uint32_t W25qxx_ReadID(void)
@@ -138,86 +140,84 @@ bool W25qxx_Init(void)
 {
     w25qxx.Lock = 1;
 
-    while (HAL_GetTick() < 100) W25qxx_Delay(1);
-
     uint32_t id = W25qxx_ReadID();
     #if (_W25QXX_DEBUG==1)
-    Report(true, "w25qxx Init Begin...\r\nw25qxx ID:0x%X\r\n", id);
+    Report(true, "w25qxx Init Begin... Chip ID:0x%X\r\n", id);
     #endif
-    switch (id & 0x0000FFFF) {
+    switch (id & 0xFFFF) {
         case 0x401A:// w25q512
             w25qxx.ID = W25Q512;
             w25qxx.BlockCount = 1024;
             #if (_W25QXX_DEBUG==1)
-            Report(true, "w25qxx Chip: w25q512\r\n");
+            Report(true, "Chip W25Q512:\r\n");
             #endif
         break;
         case 0x4019:// w25q256
             w25qxx.ID = W25Q256;
             w25qxx.BlockCount = 512;
             #if (_W25QXX_DEBUG==1)
-            Report(true, "w25qxx Chip: w25q256\r\n");
+            Report(true, "Chip W25Q256:\r\n");
             #endif
         break;
         case 0x4018:// w25q128
             w25qxx.ID = W25Q128;
             w25qxx.BlockCount = 256;
             #if (_W25QXX_DEBUG==1)
-            Report(true, "w25qxx Chip: w25q128\r\n");
+            Report(true, "Chip W25Q128:\r\n");
             #endif
         break;
         case 0x4017:// w25q64
             w25qxx.ID = W25Q64;
             w25qxx.BlockCount = 128;
             #if (_W25QXX_DEBUG==1)
-            Report(true, "w25qxx Chip: w25q64\r\n");
+            Report(true, "Chip W25Q64:\r\n");
             #endif
         break;
         case 0x4016://w25q32
             w25qxx.ID = W25Q32;
             w25qxx.BlockCount = 64;
             #if (_W25QXX_DEBUG==1)
-            Report(true, "w25qxx Chip: w25q32\r\n");
+            Report(true, "Chip W25Q32:\r\n");
             #endif
         break;
         case 0x4015://w25q16
             w25qxx.ID = W25Q16;
             w25qxx.BlockCount = 32;
             #if (_W25QXX_DEBUG==1)
-            Report(true, "w25qxx Chip: w25q16\r\n");
+            Report(true, "Chip W25Q16:\r\n");
             #endif
         break;
         case 0x4014://w25q80
             w25qxx.ID = W25Q80;
             w25qxx.BlockCount = 16;
             #if (_W25QXX_DEBUG==1)
-            Report(true, "w25qxx Chip: w25q80\r\n");
+            Report(true, "Chip W25Q80:\r\n");
             #endif
         break;
         case 0x4013://w25q40
             w25qxx.ID = W25Q40;
             w25qxx.BlockCount = 8;
             #if (_W25QXX_DEBUG==1)
-            Report(true, "w25qxx Chip: w25q40\r\n");
+            Report(true, "Chip W25Q40:\r\n");
             #endif
         break;
         case 0x4012://w25q20
             w25qxx.ID = W25Q20;
             w25qxx.BlockCount = 4;
             #if (_W25QXX_DEBUG==1)
-            Report(true, "w25qxx Chip: w25q20\r\n");
+            Report(true, "Chip W25Q20:\r\n");
             #endif
         break;
         case 0x4011://w25q10
             w25qxx.ID = W25Q10;
             w25qxx.BlockCount = 2;
             #if (_W25QXX_DEBUG==1)
-            Report(true, "w25qxx Chip: w25q10\r\n");
+            Report(true, "Chip W25Q10:\r\n");
             #endif
         break;
         default: {
             #if (_W25QXX_DEBUG==1)
-            Report(true, "w25qxx Unknown ID\r\n");
+            Report(true, "Unknown Chip ID\r\n");
             #endif
 
             w25qxx.Lock = 0;
@@ -236,15 +236,13 @@ bool W25qxx_Init(void)
     W25qxx_ReadStatusRegister(2);
     W25qxx_ReadStatusRegister(3);
     #if (_W25QXX_DEBUG==1)
-    Report(true, "Chip info:\r\n"
-    		     "w25qxx Page Size: %d Bytes\r\n"
-                 "w25qxx Page Count: %d\r\n"
-                 "w25qxx Sector Size: %d Bytes\r\n"
-                 "w25qxx Sector Count: %d\r\n"
-                 "w25qxx Block Size: %d Bytes\r\n"
-                 "w25qxx Block Count: %d\r\n"
-                 "w25qxx Capacity: %d KiloBytes\r\n"
-                 "w25qxx Init Done\r\n",
+    Report(false,"\tPage Size:\t%u bytes\r\n"
+                 "\tPage Count:\t%u\r\n"
+                 "\tSector Size:\t%u bytes\r\n"
+                 "\tSector Count:\t%u\r\n"
+                 "\tBlock Size:\t%u bytes\r\n"
+                 "\tBlock Count:\t%u\r\n"
+                 "\tCapacity:\t%u KBytes\r\n",
                  w25qxx.PageSize,
                  w25qxx.PageCount,
                  w25qxx.SectorSize,
@@ -254,7 +252,7 @@ bool W25qxx_Init(void)
                  w25qxx.CapacityInKiloByte);
     #endif
 
-    w25qxx.Lock=0;
+    w25qxx.Lock = 0;
 
     return true;
 }

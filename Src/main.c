@@ -110,7 +110,8 @@
 //const char *ver = "ver 3.6rc1";//14.08.2019 - minor changes : move any general functions to files (source and header)
 //const char *ver = "ver 3.6rc2";//15.08.2019 - minor changes : testing with tcp-server (srv with kernel timer device driver)
 //const char *ver = "ver 3.7rc1";//17.08.2019 - minor changes for sms recv. : convert ucs2 to utf8 done !!!
-const char *ver = "ver 3.8rc1";//09.09.2019 - major changes : add data flash chip W25Q64 (used SPI1 and PA4-CS_CHIP pin ) - first step
+//const char *ver = "ver 3.8rc1";//09.09.2019 - major changes : add data flash chip W25Q64 (used SPI1 and PA4-CS_CHIP pin ) - first step
+const char *ver = "ver 3.8rc2";//10.09.2019 - major changes : read data flash chip ID - next step
 
 
 /*
@@ -1099,7 +1100,7 @@ void StartDefTask(void *argument)
 
   /* USER CODE BEGIN 5 */
 
-	osDelay(1200);
+	osDelay(800);//1200
 
 	initQ(&q_gps);
 
@@ -1112,6 +1113,10 @@ void StartDefTask(void *argument)
 	uint8_t show;
 	uint8_t new = 0;
 	bool stp = true;
+
+#ifdef SET_W25FLASH
+	W25qxx_Init();
+#endif
 
 	/* Infinite loop */
 
