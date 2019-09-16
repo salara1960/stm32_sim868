@@ -112,7 +112,8 @@
 //const char *ver = "ver 3.7rc1";//17.08.2019 - minor changes for sms recv. : convert ucs2 to utf8 done !!!
 //const char *ver = "ver 3.8rc1";//09.09.2019 - major changes : add data flash chip W25Q64 (used SPI1 and PA4-CS_CHIP pin ) - first step
 //const char *ver = "ver 3.8rc2";//10.09.2019 - major changes : read data flash chip ID - next step
-const char *ver = "ver 3.8rc3";//10.09.2019 - minor changes : edit README
+//const char *ver = "ver 3.8rc3";//10.09.2019 - minor changes : edit README
+const char *ver = "ver 3.8rc4";//16.09.2019 - minor changes in get command (log-console uart) callback function
 
 
 /*
@@ -362,7 +363,6 @@ int main(void)
 
 #ifdef SET_W25FLASH
   portFLASH = &hspi1;//SPI1 - W25Q64 data flash chip
-  W25_UNSELECT();
 #endif
 
     bh1750_off();
@@ -636,7 +636,7 @@ static void MX_SPI1_Init(void)
 {
 
   /* USER CODE BEGIN SPI1_Init 0 */
-
+	W25_UNSELECT();
   /* USER CODE END SPI1_Init 0 */
 
   /* USER CODE BEGIN SPI1_Init 1 */
@@ -957,7 +957,9 @@ void getAT()
 //------------------------------------------------------------------------------------------
 void LogData()
 {
-	RxBuf[rx_uk++] = (char)lRxByte;
+	if (lRxByte == '\b') {
+		if (rx_uk > 0) rx_uk--;
+	} else RxBuf[rx_uk++] = (char)lRxByte;
 	if (lRxByte == 0x0d) {//end of line
 		bool priz = false;
 		char *uk = strstr(RxBuf, _extDate);//const char *_extDate = ":DATE=";

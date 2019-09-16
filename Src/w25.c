@@ -13,9 +13,9 @@ uint8_t W25qxx_Spi(uint8_t Data)
 {
 uint8_t ret;
 
-	HAL_SPI_TransmitReceive(portFLASH, &Data, &ret, 1, HAL_MAX_DELAY);
+    HAL_SPI_TransmitReceive(portFLASH, &Data, &ret, 1, 10);//HAL_MAX_DELAY);
 
-	return ret;
+    return ret;
 }
 //------------------------------------------------------------------------------------------
 uint32_t W25qxx_ReadID(void)
