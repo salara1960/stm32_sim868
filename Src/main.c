@@ -113,7 +113,8 @@
 //const char *ver = "ver 3.8rc1";//09.09.2019 - major changes : add data flash chip W25Q64 (used SPI1 and PA4-CS_CHIP pin ) - first step
 //const char *ver = "ver 3.8rc2";//10.09.2019 - major changes : read data flash chip ID - next step
 //const char *ver = "ver 3.8rc3";//10.09.2019 - minor changes : edit README
-const char *ver = "ver 3.8rc4";//16.09.2019 - minor changes in get command (log-console uart) callback function
+//const char *ver = "ver 3.8rc4";//16.09.2019 - minor changes in get command (log-console uart) callback function
+const char *ver = "ver 3.8rc5";//16.09.2019 - fixed minor bug (after :RESTART command)
 
 
 /*
@@ -1650,9 +1651,9 @@ void StartAtTask(void *argument)
 						}
 						if (repeat) tms = max_ms;
 					} else if (strstr(msgAT, "SMS Ready")) {
-						counter = 1;
+						if (!cmdsInd) counter = 1;
 					} else if (strstr(msgAT, "+CPIN: NOT INSERTED")) {
-						counter = 1;
+						if (!cmdsInd) counter = 1;
 					} else if ((uki = strstr(msgAT, "+CSQ: ")) != NULL) {//+CSQ: 15,0
 						uki += 6;
 						if ((uk = strchr(uki, ',')) != NULL) {
