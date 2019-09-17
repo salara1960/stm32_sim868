@@ -385,9 +385,10 @@ uint32_t tik = 0;
 #ifdef WITH_KERNEL_TIMER
     //--------------------  open TMR device  -----------------------------
     if ((fd_timer = open(tmr_name, O_RDWR) ) < 0) {
-        print_msg(1, "Can't open device '%s' (%s)\n", tmr_name, strerror(errno));
+        print_msg(1, "Can't open device '%s' (%s) - > Main done.\n", tmr_name, strerror(errno));
         if (pid_main) unlink(pid_name);
         if (fd_log > 0) close(fd_log);
+        return 1;
     } else {
         tik = get_timer(0);
         print_msg(1, "Open device '%s' OK (sec=%u)\n", tmr_name, tik);
