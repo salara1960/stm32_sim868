@@ -114,7 +114,9 @@
 //const char *ver = "ver 3.8rc2";//10.09.2019 - major changes : read data flash chip ID - next step
 //const char *ver = "ver 3.8rc3";//10.09.2019 - minor changes : edit README
 //const char *ver = "ver 3.8rc4";//16.09.2019 - minor changes in get command (log-console uart) callback function
-const char *ver = "ver 3.8rc5";//16.09.2019 - fixed minor bug (after :RESTART command)
+//const char *ver = "ver 3.8rc5";//16.09.2019 - fixed minor bug (after :RESTART command)
+const char *ver = "ver 3.8rc6";//20.12.2019 - minor chages+++
+
 
 
 /*
@@ -245,8 +247,8 @@ const char *cmds[] = {
 	"AT+CSQ\r\n"//get RSSI
 };
 
-const char *sim_num = "+79062100000";
-const char *srv_adr_def = "aaa.bbb.ccc.ddd";
+const char *sim_num = "+79062103497";
+const char *srv_adr_def = "85.115.224.138";
 const uint16_t srv_port_def = 9192;
 char srv_adr[16] = {0};
 uint16_t srv_port;
@@ -1013,7 +1015,7 @@ void LogData()
 			} else if (strstr(RxBuf, ":OFF")) {
 				evt_gsm = 2;
 				priz = true;
-			} else if ((uk = strstr(RxBuf, ":LOG")) != NULL) {//if (strstr(RxBuf, ":LOG?")) {
+			} else if ((uk = strstr(RxBuf, ":LOG")) != NULL) {
 				priz = true;
 				flags.log_flag = 1;
 				if (*(uk + 4) != '?') flags.log_show = ~flags.log_show;
@@ -1110,7 +1112,7 @@ void StartDefTask(void *argument)
 
   /* USER CODE BEGIN 5 */
 
-	osDelay(800);//1200
+	osDelay(800);
 
 	initQ(&q_gps);
 
@@ -1146,7 +1148,7 @@ void StartDefTask(void *argument)
   			sprintf(toScreen, "Stop All");
   			Report(true, "%s!\r\n", toScreen);
   			toDisplay((const char *)toScreen, 0, 5, false);
-  			osDelay(1200);//1500
+  			osDelay(1200);
   			if (getVIO()) {
   				gsmONOFF(ModuleOFF);
   				uint8_t ct = 8;
@@ -1239,8 +1241,6 @@ void StartDefTask(void *argument)
 
   	exit(0);
 
-  	//LOOP_FOREVER();
-
   /* USER CODE END 5 */ 
 }
 
@@ -1264,11 +1264,7 @@ void StartSensTask(void *argument)
 
 	uint16_t lux = 0;
 	float lx = -1.0;
-
-  /* Infinite loop */
-
 	flags.msg_end = 0;
-
 	uint32_t wait_sensor = get_tmr(wait_sensor_def);
 
 	bh1750_on_mode();
@@ -1325,7 +1321,6 @@ void StartSensTask(void *argument)
 	osDelay(100);
 
 	exit(0);
-	//LOOP_FOREVER();
 
   /* USER CODE END StartSensTask */
 }
@@ -1369,8 +1364,7 @@ void StartAtTask(void *argument)
 	char fromNum[lenFrom] = {0};
 	uint8_t abcd[5] = {0};
 	smsTMP[0] = 0;
-	uint16_t sms_num;
-	uint16_t sms_len;
+	uint16_t sms_num, sms_len;
 	uint8_t sms_total;
 	int8_t nrec = -1;
 	s_udhi_t reco;
@@ -1392,7 +1386,10 @@ void StartAtTask(void *argument)
 
 	bool vios = getVIO();
 	if (!vios) {
-		while (!getVIO()) { gsmONOFF(tmps); HAL_Delay(2000); }
+		while (!getVIO()) {
+			gsmONOFF(tmps);
+			HAL_Delay(2000);
+		}
 	} else {
 		flags.auto_cmd = 1;
 		faza = 4;
@@ -1663,7 +1660,7 @@ void StartAtTask(void *argument)
 							cmd[dl] = 0;
 							gsm_stat.rssi = atoi(cmd);
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
-							sprintf(toScr, "RSSI : %d dBm  ", dBmRSSI[gsm_stat.rssi&0x1f]);//gsm_stat.rssi);
+							sprintf(toScr, "RSSI : %d dBm  ", dBmRSSI[gsm_stat.rssi&0x1f]);
 							toDisplay((const char *)toScr, 1, 5, true);
 #endif
 							if (prf) {
@@ -1979,8 +1976,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			  }
 		  }
 		  //------------------------------------------------------------------------------------------
-		  if (getVIO()) HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);//gsm is on
-		  		   else HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET);//gsm is off
+		  if (getVIO()) HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_SET);   //gsm is on
+		  		   else HAL_GPIO_WritePin(GPIO_PortD, LED_ORANGE_Pin, GPIO_PIN_RESET); //gsm is off
 		  //------------------------------------------------------------------------------------------
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
 		  char pic = 0x14;

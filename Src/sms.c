@@ -4,7 +4,7 @@
 #ifdef SET_SMS
 
 static s_udhi_t sms_rec[maxSMSPart];
-const char *sim_auth_num = "79097960000";
+const char *sim_auth_num = "79097965036";
 const char *eolin = "\r\n";
 int TSINPART = 0;//from, date/time are present in part 1 sms only, if sms without udhi -> from, date/time not present
 char SMS_text[SMS_BUF_LEN];
@@ -118,13 +118,6 @@ uint8_t ret = 0;
 	return ret;
 }
 //------------------------------------------------------------------------------
-/*
-uint16_t SwapBytes(uint16_t word)
-{
-	return ((word >> 8) | (word << 8));
-}
-*/
-//------------------------------------------------------------------------------
 int gsm7bit_to_text(int len_inbuff, uint8_t *inbuff, uint8_t *outbuff, int fl, uint8_t max_udl, uint8_t u_len)
 {
 int dl_ind = 0, i = 0, shift = 1, lb = max_udl;
@@ -174,7 +167,7 @@ uint8_t words[4] = {0};
 //----------------------------------------------------------------------------------
 int conv_ucs2_text(uint8_t *buffer_txt, char *fromik, uint8_t *udhi5, uint8_t prn)
 {
-int ret = 0;//, yes;
+int ret = 0;
 int tt, tt1 = 0, tt_n, tt1_n, len, i = 0, j = 0, k = 0, shift, it = 0, tzone, end_ind = 0;
 char *ps1, *ps_begin, *ps3, *uk_start, *pss, *pss0, *ps_o, *ps_type, *ina2, *qik, *ps0;
 char *uk_start7 = NULL;
@@ -661,11 +654,11 @@ int8_t ret = -1;
     sprintf(buf+strlen(buf), "\t\"DevTime\": %lu,\r\n", get_secCounter());
     sprintf(buf+strlen(buf), "\t\"FreeMem\": %u,\r\n",xPortGetFreeHeapSize());
     if (setDate) {
-    #ifdef SET_RTC_TMR
+#ifdef SET_RTC_TMR
     	uint32_t ep = getSecRTC(&hrtc);
-	#else
+#else
     	uint32_t ep = get_extDate();
-	#endif
+#endif
     	sprintf(buf+strlen(buf), "\t\"EpochTime\": %lu,\r\n", ep);
     }
     sprintf(buf+strlen(buf), "\t\"smsNumber\": %u,\r\n", snum);

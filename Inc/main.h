@@ -1,23 +1,6 @@
 /* USER CODE BEGIN Header */
 //char *buff = (char *)pvPortMalloc(len); vPortFree(buff);
-/**
-  ******************************************************************************
-  * @file           : main.h
-  * @brief          : Header for main.c file.
-  *                   This file contains the common defines of the application.
-  ******************************************************************************
-  * @attention
-  *
-  * <h2><center>&copy; Copyright (c) 2019 STMicroelectronics.
-  * All rights reserved.</center></h2>
-  *
-  * This software component is licensed by ST under Ultimate Liberty license
-  * SLA0044, the "License"; You may not use this file except in compliance with
-  * the License. You may obtain a copy of the License at:
-  *                             www.st.com/SLA0044
-  *
-  ******************************************************************************
-  */
+
 /* USER CODE END Header */
 
 /* Define to prevent recursive inclusion -------------------------------------*/
@@ -54,12 +37,9 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
-#ifdef SET_JFES
-	#define MAX_UART_BUF 640//704//640//512//480//400//384//256
-#else
-	#define MAX_UART_BUF 640//600//512//480//400//384//256
-#endif
-#define REC_BUF_LEN MAX_UART_BUF//600
+
+#define MAX_UART_BUF 640
+#define REC_BUF_LEN MAX_UART_BUF
 #define MAX_QMSG 8
 #define MAX_QREC 8
 #define size_imei 15

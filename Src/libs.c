@@ -51,8 +51,6 @@ const int8_t dBmRSSI[max_rssi] = {
 };
 
 const char *nameValid[] = {"Invaid", "Valid"};
-//const char *nameNS[] = {"North" , "South"};
-//const char *nameEW[] = {"East" , "West"};
 
 //------------------------------------------------------------------------------------
 
@@ -217,7 +215,6 @@ void errLedOn(const char *from)
 	HAL_GPIO_WritePin(GPIOD, LED_ERROR, GPIO_PIN_SET);//LED ON
 
 	if (from) Report(true, "Error in '%s'\r\n", from);
-
 }
 //------------------------------------------------------------------------------------------
 int sec_to_string(uint32_t sec, char *stx, bool log)
@@ -325,20 +322,6 @@ RTC_DateTypeDef sDate;
 	return ep;
 }
 #endif
-//----------------------------------------------------------------------------------------
-/*
-int sec_to_str_time(uint32_t sec, char *stx)
-{
-	uint32_t day = sec / (60 * 60 * 24);
-	sec %= (60 * 60 * 24);
-    uint32_t hour = sec / (60 * 60);
-    sec %= (60 * 60);
-    uint32_t min = sec / (60);
-    sec %= 60;
-
-    return (sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, sec));
-}
-*/
 //------------------------------------------------------------------------------------------
 bool getVIO()
 {
@@ -387,6 +370,7 @@ done:
 }
 //-----------------------------------------------------------------------------------------
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+
 uint8_t ssd1306_calcx(int len)
 {
 uint8_t ret = 0;
