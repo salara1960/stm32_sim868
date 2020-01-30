@@ -7,6 +7,13 @@
 
 #include "libs.h"
 
+#define W25QXX_DEBUG
+
+#define W25QXX_DUMMY_BYTE 0xA5
+
+#define W25qxx_Delay(delay) osDelay(delay)
+#define W25_SELECT()   HAL_GPIO_WritePin(W25_CS_GPIO_Port, W25_CS_Pin, GPIO_PIN_RESET);//set to 0
+#define W25_UNSELECT() HAL_GPIO_WritePin(W25_CS_GPIO_Port, W25_CS_Pin, GPIO_PIN_SET);  //set to 1
 
 typedef enum {
     W25Q10 = 1,
@@ -43,13 +50,6 @@ typedef struct {
 } w25qxx_t;
 #pragma pack(pop)
 
-
-#define _W25QXX_DEBUG 1
-#define W25QXX_DUMMY_BYTE 0xA5
-
-#define W25qxx_Delay(delay) osDelay(delay)
-#define W25_SELECT()   HAL_GPIO_WritePin(W25_CS_GPIO_Port, W25_CS_Pin, GPIO_PIN_RESET);//set to 0
-#define W25_UNSELECT() HAL_GPIO_WritePin(W25_CS_GPIO_Port, W25_CS_Pin, GPIO_PIN_SET);  //set to 1
 
 //------------------------------------------------------------------------------------------
 
