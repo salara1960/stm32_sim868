@@ -36,16 +36,18 @@ uint8_t ret;
 //------------------------------------------------------------------------------------------
 uint32_t W25qxx_ReadID(void)
 {
+uint32_t Temp[3] = {0};
+
     W25_SELECT();//set to 0
 
     W25qxx_Spi(0x9F);
-    uint32_t Temp0 = W25qxx_Spi(W25QXX_DUMMY_BYTE);
-    uint32_t Temp1 = W25qxx_Spi(W25QXX_DUMMY_BYTE);
-    uint32_t Temp2 = W25qxx_Spi(W25QXX_DUMMY_BYTE);
+    Temp[0] = W25qxx_Spi(W25QXX_DUMMY_BYTE);
+    Temp[1] = W25qxx_Spi(W25QXX_DUMMY_BYTE);
+    Temp[2] = W25qxx_Spi(W25QXX_DUMMY_BYTE);
 
     W25_UNSELECT();//set to 1
 
-    return ((Temp0 << 16) | (Temp1 << 8) | Temp2);
+    return ((Temp[0] << 16) | (Temp[1] << 8) | Temp[2]);
 }
 //------------------------------------------------------------------------------------------
 void W25qxx_ReadUniqID(void)
@@ -155,13 +157,15 @@ bool W25qxx_Init(void)
 {
     w25qxx.Lock = 1;
     bool ret = false;
-    uint32_t id = (W25qxx_ReadID() & 0xffff);
+
+    W25_UNSELECT();
+
+    uint32_t id = W25qxx_ReadID() & 0xffff;
 #ifdef W25QXX_DEBUG
     Report(true, "w25qxx Init Begin... Chip ID:0x%X\r\n", id);
 #endif
-    id -= 0x4010;
-    if (id > 0x0a) id = 0;
-    w25qxx.ID = id;                      //W25Q10..W25Q512
+    id -= 0x4010; if (id > 0x0a) id = 0;
+    w25qxx.ID         = id;              //W25Q10..W25Q512
     w25qxx.BlockCount = all_chipBLK[id]; //0..1024;
 #ifdef W25QXX_DEBUG
     Report(true, "Chip %s:\r\n", all_chipID[id]);

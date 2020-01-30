@@ -117,7 +117,8 @@
 //const char *ver = "ver 3.8rc5";//16.09.2019 - fixed minor bug (after :RESTART command)
 //const char *ver = "ver 3.8rc6";//20.12.2019 - minor chages+++
 //const char *ver = "ver 3.8rc7";//30.01.2020 - minor chages for data flash chip W25Q64/128
-const char *ver = "ver 3.8rc8";//30.01.2020 - minor chages in functions for W25QXX
+//const char *ver = "ver 3.8rc8";//30.01.2020 - minor chages in functions for W25QXX
+const char *ver = "ver 3.8rc9";//30.01.2020 - minor chages in read chip ID for W25QXX
 
 
 
