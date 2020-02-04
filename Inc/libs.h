@@ -16,7 +16,9 @@
 extern const int8_t dBmRSSI[max_rssi];
 
 //--------------------------------------------------------------------------
-
+#ifdef SET_FLOAT_PART
+	extern void floatPart(float val, s_float_t *part);
+#endif
 extern uint32_t get_secCounter();
 extern void inc_secCounter();
 extern uint64_t get_hsCounter();

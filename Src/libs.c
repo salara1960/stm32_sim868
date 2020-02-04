@@ -51,7 +51,14 @@ const int8_t dBmRSSI[max_rssi] = {
 };
 
 const char *nameValid[] = {"Invaid", "Valid"};
-
+//------------------------------------------------------------------------------------------
+#ifdef SET_FLOAT_PART
+void floatPart(float val, s_float_t *part)
+{
+	part->cel = (uint32_t)val;
+	part->dro = (val - part->cel) * 1000000;
+}
+#endif
 //------------------------------------------------------------------------------------
 
 uint32_t get_secCounter()
@@ -576,6 +583,8 @@ int8_t ret = -1;
 
 	char tmp[64];
 	int len = 4;
+	s_float_t flo = {0,0};
+	const uint32_t delit = 10000;
 
 	strcpy(buf, "{\r\n");
 
@@ -627,19 +636,39 @@ int8_t ret = -1;
 				len += sprintf(tmp, "\t\"%s\": \"%s\",\r\n", Items[i], nameValid[data->inf.status&1]);
 				break;
 			case 10://"Latitude",
+#ifdef SET_FLOAT_PART
+				floatPart(data->inf.latitude, &flo);
+				len += sprintf(tmp, "\t\"%s\": %lu.%lu,\r\n", Items[i], flo.cel, flo.dro);
+#else
 				len += sprintf(tmp, "\t\"%s\": %f,\r\n", Items[i], data->inf.latitude);
+#endif
 				break;
 			case 11://"Longitude",
+#ifdef SET_FLOAT_PART
+				floatPart(data->inf.longitude, &flo);
+				len += sprintf(tmp, "\t\"%s\": %lu.%lu,\r\n", Items[i], flo.cel, flo.dro);
+#else
 				len += sprintf(tmp, "\t\"%s\": %f,\r\n", Items[i], data->inf.longitude);
+#endif
 				break;
 			case 12://"Altitude",
 				len += sprintf(tmp, "\t\"%s\": %d,\r\n", Items[i], data->inf.altitude);
 				break;
 			case 13://"Speed",
+#ifdef SET_FLOAT_PART
+				floatPart(data->inf.speed, &flo);
+				len += sprintf(tmp, "\t\"%s\": %lu.%lu,\r\n", Items[i], flo.cel, flo.dro/delit);
+#else
 				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.speed);
+#endif
 				break;
 			case 14://"Dir",
+#ifdef SET_FLOAT_PART
+				floatPart(data->inf.dir, &flo);
+				len += sprintf(tmp, "\t\"%s\": %lu.%lu,\r\n", Items[i], flo.cel, flo.dro/delit);
+#else
 				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->inf.dir);
+#endif
 				break;
 /*
 			case 15://"Mode",
@@ -679,21 +708,46 @@ int8_t ret = -1;
 				len += sprintf(tmp, "\t\"%s\": %d,\r\n", Items[i], dBmRSSI[gsm_stat.rssi&0x1f]);//gsm_stat.rssi);
 				break;
 			case 23://"Press",
+#ifdef SET_FLOAT_PART
+				floatPart(data->sens.pres, &flo);
+				len += sprintf(tmp, "\t\"%s\": %lu.%lu,\r\n", Items[i], flo.cel, flo.dro/delit);
+#else
 				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->sens.pres);
+#endif
 				break;
 			case 24://"Temp",
+#ifdef SET_FLOAT_PART
+				floatPart(data->sens.temp, &flo);
+				len += sprintf(tmp, "\t\"%s\": %lu.%lu,\r\n", Items[i], flo.cel, flo.dro/delit);
+#else
 				len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->sens.temp);
+#endif
 				break;
 			case 25://"Lux",
+#ifdef SET_FLOAT_PART
+				floatPart(data->sens.lux, &flo);
+				flo.dro /= delit;
+				if (data->sens.chip == BME280_SENSOR) {
+					len += sprintf(tmp, "\t\"%s\": %lu.%lu,\r\n", Items[i], flo.cel, flo.dro);
+				} else {
+					len += sprintf(tmp, "\t\"%s\": %lu.%lu\r\n", Items[i], flo.cel, flo.dro);
+				}
+#else
 				if (data->sens.chip == BME280_SENSOR) {
 					len += sprintf(tmp, "\t\"%s\": %.2f,\r\n", Items[i], data->sens.lux);
 				} else {
 					len += sprintf(tmp, "\t\"%s\": %.2f\r\n", Items[i], data->sens.lux);
 				}
+#endif
 				break;
 			case 26://"Humi"
 				if (data->sens.chip == BME280_SENSOR) {
+#ifdef SET_FLOAT_PART
+					floatPart(data->sens.humi, &flo);
+					len += sprintf(tmp, "\t\"%s\": %lu.%lu\r\n", Items[i], flo.cel, flo.dro/delit);
+#else
 					len += sprintf(tmp, "\t\"%s\": %.2f\r\n", Items[i], data->sens.humi);
+#endif
 				} else memset(tmp, 0, sizeof(tmp));
 				break;
 		}//switch (i)

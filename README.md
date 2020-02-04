@@ -13,7 +13,7 @@
 * bmp280 - atmospheric pressure and air temperature sensor (I2C interface).
 * bh1750 - light sensor (I2C interface).
 * sim868 - card with SIM868 module (SIMCOM).
-* w25q64 - data flash (SPI interface).
+* w25q64 - data falsh (SPI interface).
 ```
 
 

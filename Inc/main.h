@@ -44,6 +44,18 @@ extern "C" {
 #define MAX_QREC 8
 #define size_imei 15
 
+#define SET_FLOAT_PART
+//#define SET_MUTEX_LCD
+//#define SET_SEM_LCD
+
+#ifdef SET_FLOAT_PART
+typedef struct {
+	uint32_t cel;
+	uint32_t dro;
+} s_float_t;
+#endif
+
+
 #pragma pack(push,1)
 typedef struct {
 	uint8_t chip;
@@ -187,6 +199,12 @@ typedef struct s_recq_t {
 /* USER CODE BEGIN EC */
 
 extern osSemaphoreId_t binSemHandle;//semaphore for Report(...)
+#ifdef SET_MUTEX_LCD
+	extern osMutexId_t mutexLCD;
+#endif
+#ifdef SET_SEM_LCD
+	extern osSemaphoreId_t semLCD;
+#endif
 extern bool onGNS;
 extern bool ackYes;
 extern const char *strOnOff[];

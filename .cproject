@@ -84,7 +84,7 @@
 								<option id="fr.ac6.managedbuild.tool.gnu.cross.c.linker.script.580443630" name="Linker Script (-T)" superClass="fr.ac6.managedbuild.tool.gnu.cross.c.linker.script" useByScannerDiscovery="false" value="../STM32F407VGTx_FLASH.ld" valueType="string"/>
 								<option id="gnu.c.link.option.libs.1021299419" name="Libraries (-l)" superClass="gnu.c.link.option.libs" useByScannerDiscovery="false"/>
 								<option id="gnu.c.link.option.paths.1687732154" name="Library search path (-L)" superClass="gnu.c.link.option.paths" useByScannerDiscovery="false"/>
-								<option id="gnu.c.link.option.ldflags.1827252777" name="Linker flags" superClass="gnu.c.link.option.ldflags" useByScannerDiscovery="false" value=" -u_printf_float" valueType="string"/>
+								<option id="gnu.c.link.option.ldflags.1827252777" name="Linker flags" superClass="gnu.c.link.option.ldflags" useByScannerDiscovery="false" value=" -specs=nano.specs" valueType="string"/>
 								<option id="gnu.c.link.option.other.217001599" name="Other options (-Xlinker [option])" superClass="gnu.c.link.option.other" useByScannerDiscovery="false"/>
 								<inputType id="cdt.managedbuild.tool.gnu.c.linker.input.2010384615" superClass="cdt.managedbuild.tool.gnu.c.linker.input">
 									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>

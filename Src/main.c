@@ -118,7 +118,8 @@
 //const char *ver = "ver 3.8rc6";//20.12.2019 - minor chages+++
 //const char *ver = "ver 3.8rc7";//30.01.2020 - minor chages for data flash chip W25Q64/128
 //const char *ver = "ver 3.8rc8";//30.01.2020 - minor chages in functions for W25QXX
-const char *ver = "ver 3.8rc9";//30.01.2020 - minor chages in read chip ID for W25QXX
+//const char *ver = "ver 3.8rc9";//30.01.2020 - minor chages in read chip ID for W25QXX
+const char *ver = "ver 3.9rc1";//04.02.2020 - minor chages : add floatPart() function (remove -u_printf_float link option)
 
 
 
@@ -176,6 +177,12 @@ osSemaphoreId_t binSemHandle;
 /* USER CODE BEGIN PV */
 
 osSemaphoreId_t msgSem;
+#ifdef SET_MUTEX_LCD
+	osMutexId_t mutexLCD;
+#endif
+#ifdef SET_SEM_LCD
+	osSemaphoreId_t semLCD;
+#endif
 
 uint32_t infCounter = 0;
 
@@ -290,9 +297,9 @@ static void MX_USART3_UART_Init(void);
 static void MX_SPI3_Init(void);
 static void MX_RTC_Init(void);
 static void MX_SPI1_Init(void);
-void StartDefTask(void *argument); // for v2
-void StartSensTask(void *argument); // for v2
-void StartAtTask(void *argument); // for v2
+void StartDefTask(void *argument);
+void StartSensTask(void *argument);
+void StartAtTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -342,6 +349,19 @@ int main(void)
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
 
+#ifdef SET_MUTEX_LCD
+  const osMutexAttr_t mutexLCD_attributes = {
+    .name = "mutexLCD"
+  };
+  mutexLCD = osMutexNew(&mutexLCD_attributes);
+#endif
+#ifdef SET_SEM_LCD
+  const osSemaphoreAttr_t semLCD_attributes = {
+    .name = "semLCD"
+  };
+  semLCD = osSemaphoreNew(1, 1, &semLCD_attributes);
+#endif
+
   portBMP = &hi2c1;//BMP280
 #ifdef SET_OLED_I2C
   portSSD = &hi2c1;//I2C1 - OLED ssd1306
@@ -389,7 +409,9 @@ int main(void)
 
   /* USER CODE END 2 */
 
-  osKernelInitialize(); // Initialize CMSIS-RTOS
+  osKernelInitialize();
+
+  /* Create the mutex(es) */
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
@@ -835,6 +857,7 @@ static void MX_USART3_UART_Init(void)
   */
 static void MX_DMA_Init(void) 
 {
+
   /* DMA controller clock enable */
   __HAL_RCC_DMA1_CLK_ENABLE();
 
@@ -1112,7 +1135,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 /* USER CODE END Header_StartDefTask */
 void StartDefTask(void *argument)
 {
-
   /* USER CODE BEGIN 5 */
 
 	osDelay(800);
@@ -1128,6 +1150,13 @@ void StartDefTask(void *argument)
 	uint8_t show;
 	uint8_t new = 0;
 	bool stp = true;
+#ifdef SET_FLOAT_PART
+	s_float_t flo1 = {0, 0};
+	s_float_t flo2 = {0, 0};
+	s_float_t flo3 = {0, 0};
+	s_float_t flo4 = {0, 0};
+	const uint32_t delit = 10000;
+#endif
 
 #ifdef SET_W25FLASH
 	W25qxx_Init();
@@ -1173,27 +1202,74 @@ void StartDefTask(void *argument)
   			new |= 1;
   			row = 6;
   			show = flags.log_show;
+#ifdef SET_FLOAT_PART
+			floatPart(levt.pres, &flo1);
+			floatPart(levt.temp, &flo2);
+			sprintf(toScreen, "mmHg : %lu.%lu\nDegC : %lu.%lu", flo1.cel, flo1.dro/delit, flo2.cel, flo2.dro/delit);
+#else
   			sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", levt.pres, levt.temp);
+#endif
   			switch (levt.chip) {
   				case BMP280_SENSOR :
+#ifdef SET_FLOAT_PART
+  					floatPart(levt.pres, &flo1);
+  					floatPart(levt.temp, &flo2);
+  					sprintf(toScreen, "mmHg : %lu.%lu\nDegC : %lu.%lu", flo1.cel, flo1.dro/delit, flo2.cel, flo2.dro/delit);
+  					if (show) {
+  						floatPart(levt.pres, &flo1);
+  						floatPart(levt.temp, &flo2);
+  						floatPart(levt.lux, &flo3);
+  						sprintf(DefBuf, "BMP280: mmHg=%lu.%lu, DegC=%lu.%lu; BH1750: Lx=%lu.%lu\r\n",
+  								flo1.cel, flo1.dro/delit, flo2.cel, flo2.dro/delit, flo3.cel, flo3.dro/delit);
+  					}
+#else
   					sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", levt.pres, levt.temp);
   					if (show) sprintf(DefBuf, "BMP280: mmHg=%.2f, DegC=%.2f; BH1750: Lx=%.2f\r\n",
   										levt.pres, levt.temp, levt.lux);
+#endif
   				break;
   				case BME280_SENSOR :
   					row = 5;
+#ifdef SET_FLOAT_PART
+  					floatPart(levt.pres, &flo1);
+  					floatPart(levt.temp, &flo2);
+  					floatPart(levt.humi, &flo3);
+  					sprintf(toScreen, "mmHg : %lu.%lu\nDegC : %lu.%lu\nHumi: %lu.%lu %%rH",
+  							flo1.cel, flo1.dro/delit, flo2.cel, flo2.dro/delit, flo3.cel, flo3.dro/delit);
+  					if (show) {
+  						floatPart(levt.pres, &flo1);
+  						floatPart(levt.temp, &flo2);
+  						floatPart(levt.humi, &flo3);
+  						floatPart(levt.lux, &flo4);
+  						sprintf(DefBuf, "BME280: mmHg=%lu.%lu, DegC=%lu.%lu %%rH=%lu.%lu; BH1750: Lx=%lu.%lu\r\n",
+  								flo1.cel, flo1.dro/delit, flo2.cel, flo2.dro/delit, flo3.cel, flo3.dro/delit, flo3.cel, flo3.dro/delit);
+  					}
+#else
   					sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f\nHumi: %.2f %%rH", levt.pres, levt.temp, levt.humi);
   					if (show) sprintf(DefBuf, "BME280: mmHg=%.2f, DegC=%.2f %%rH=%.2f; BH1750: Lx=%.2f\r\n",
   				  						levt.pres, levt.temp, levt.humi, levt.lux);
+#endif
   				break;
   				default : {
   						sprintf(toScreen, "\n\n");
-  						if (show) sprintf(DefBuf, "Unknown chip; BH1750: Lx=%.2f\r\n", levt.lux);
+  						if (show) {
+#ifdef SET_FLOAT_PART
+  							floatPart(levt.lux, &flo1);
+  							sprintf(DefBuf, "Unknown chip; BH1750: Lx=%lu.%lu\r\n", flo1.cel, flo1.dro/delit);
+#else
+  							sprintf(DefBuf, "Unknown chip; BH1750: Lx=%.2f\r\n", levt.lux);
+#endif
+  						}
   				}
   			}
   			//
 #if defined(SET_OLED_I2C) || defined(SET_OLED_SPI)
+	#ifdef SET_FLOAT_PART
+  			floatPart(levt.lux, &flo1);
+  			sprintf(toScreen+strlen(toScreen), "\nLux  : %lu.%lu", flo1.cel, flo1.dro/delit);
+    #else
   			sprintf(toScreen+strlen(toScreen), "\nLux  : %.2f", levt.lux);
+	#endif
 	#ifdef SET_OLED_I2C
   			if (!i2cError) i2c_ssd1306_text_xy(toScreen, 1, row);
 	#endif
